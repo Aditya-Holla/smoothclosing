@@ -1,5 +1,296 @@
 {
-  "downloaded_pdfs": {},
+  "downloaded_pdfs": {
+    "burnet/FEES 01012024.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0093/docs/FEES 01012024.pdf",
+      "downloaded_at": "2026-03-31T18:34:58.376831",
+      "size_bytes": 1172296
+    },
+    "burnet/Comm. Court Certificate.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/docs/Comm. Court Certificate.pdf",
+      "downloaded_at": "2026-03-31T18:34:58.969868",
+      "size_bytes": 54373
+    },
+    "burnet/Hobbs 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Hobbs 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:34:59.824801",
+      "size_bytes": 1198537
+    },
+    "burnet/Garcia 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Garcia 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:00.503101",
+      "size_bytes": 1179982
+    },
+    "burnet/Longoria-Salazar 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Longoria-Salazar 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:01.218012",
+      "size_bytes": 1383433
+    },
+    "burnet/Schwartz jr 4-4-26 Posted.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Schwartz jr 4-4-26 Posted.pdf",
+      "downloaded_at": "2026-03-31T18:35:01.996622",
+      "size_bytes": 1757065
+    },
+    "burnet/Martich-Barbee 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Martich-Barbee 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:02.719639",
+      "size_bytes": 1324558
+    },
+    "burnet/Woodley 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Woodley 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:03.383731",
+      "size_bytes": 1262086
+    },
+    "burnet/Rocking R and R Ranch.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Rocking R and R Ranch.pdf",
+      "downloaded_at": "2026-03-31T18:35:04.017051",
+      "size_bytes": 486886
+    },
+    "burnet/Graham 4.7.26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Graham 4.7.26.pdf",
+      "downloaded_at": "2026-03-31T18:35:04.582645",
+      "size_bytes": 138981
+    },
+    "burnet/Posted Ramirez Foreclosure Posting.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Posted Ramirez Foreclosure Posting.pdf",
+      "downloaded_at": "2026-03-31T18:35:05.205936",
+      "size_bytes": 190663
+    },
+    "burnet/Bubbbles  Barks Holdings 4-7-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Bubbbles  Barks Holdings 4-7-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:06.188551",
+      "size_bytes": 2585760
+    },
+    "burnet/Lawson and Bean 04.07.2026.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Lawson and Bean 04.07.2026.pdf",
+      "downloaded_at": "2026-03-31T18:35:06.822456",
+      "size_bytes": 398204
+    },
+    "burnet/Fournier 1 - posted.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Fournier 1 - posted.pdf",
+      "downloaded_at": "2026-03-31T18:35:07.471999",
+      "size_bytes": 406051
+    },
+    "burnet/Fournier 2 - posted.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Fournier 2 - posted.pdf",
+      "downloaded_at": "2026-03-31T18:35:08.076666",
+      "size_bytes": 395593
+    },
+    "burnet/LTX Holdings 4.7.2026_Part1.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LTX Holdings 4.7.2026_Part1.pdf",
+      "downloaded_at": "2026-03-31T18:35:08.774084",
+      "size_bytes": 934191
+    },
+    "burnet/LTX Holdings4.7.2026_Part2.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LTX Holdings4.7.2026_Part2.pdf",
+      "downloaded_at": "2026-03-31T18:35:09.457904",
+      "size_bytes": 934534
+    },
+    "burnet/LTX Holdings 4.7.2026 3.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LTX Holdings 4.7.2026 3.pdf",
+      "downloaded_at": "2026-03-31T18:35:10.147689",
+      "size_bytes": 932943
+    },
+    "burnet/LTX Holdings 4.7.2026 4.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LTX Holdings 4.7.2026 4.pdf",
+      "downloaded_at": "2026-03-31T18:35:10.816223",
+      "size_bytes": 929616
+    },
+    "burnet/LTX Holdings  4.7.2026 5.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LTX Holdings  4.7.2026 5.pdf",
+      "downloaded_at": "2026-03-31T18:35:11.467947",
+      "size_bytes": 929355
+    },
+    "burnet/Whitaker Bostick 4.7.2026.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Whitaker Bostick 4.7.2026.pdf",
+      "downloaded_at": "2026-03-31T18:35:12.107719",
+      "size_bytes": 1068010
+    },
+    "burnet/McCarty 5-5-26 1.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/McCarty 5-5-26 1.pdf",
+      "downloaded_at": "2026-03-31T18:35:13.178045",
+      "size_bytes": 325898
+    },
+    "burnet/Vanderway-Sostak 5-5-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Vanderway-Sostak 5-5-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:13.986327",
+      "size_bytes": 1830176
+    },
+    "burnet/Nelson 5-5-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Nelson 5-5-26.pdf",
+      "downloaded_at": "2026-03-31T18:35:14.625717",
+      "size_bytes": 438424
+    },
+    "burnet/Jennings 06.02.2026.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Jennings 06.02.2026.pdf",
+      "downloaded_at": "2026-03-31T18:35:15.186669",
+      "size_bytes": 161304
+    },
+    "hays/Online-Resources.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/Online-Resources.pdf",
+      "downloaded_at": "2026-03-31T18:35:17.789858",
+      "size_bytes": 12634
+    },
+    "hays/2022-Hays-District-Clerk-Civil-Fees.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/2022-Hays-District-Clerk-Civil-Fees.pdf",
+      "downloaded_at": "2026-03-31T18:35:18.853611",
+      "size_bytes": 733178
+    },
+    "hays/FY24_Budget_Calendar_rev-c10fb121.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/FY24_Budget_Calendar_rev-c10fb121.pdf",
+      "downloaded_at": "2026-03-31T18:35:19.933887",
+      "size_bytes": 468143
+    },
+    "hays/Foreclosures.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/Foreclosures.pdf",
+      "downloaded_at": "2026-03-31T18:35:20.977074",
+      "size_bytes": 498316
+    },
+    "hays/April+2026+Batch+1.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+1.pdf",
+      "downloaded_at": "2026-03-31T18:35:21.871988",
+      "size_bytes": 86798
+    },
+    "hays/April+2026+Batch+2.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+2.pdf",
+      "downloaded_at": "2026-03-31T18:35:22.956073",
+      "size_bytes": 540773
+    },
+    "hays/April+2026+Batch+3.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+3.pdf",
+      "downloaded_at": "2026-03-31T18:35:23.973977",
+      "size_bytes": 480375
+    },
+    "hays/April+2026+Batch+4.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+4.pdf",
+      "downloaded_at": "2026-03-31T18:35:25.095350",
+      "size_bytes": 586493
+    },
+    "hays/April+2026+Batch+5-3902cd48.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+5-3902cd48.pdf",
+      "downloaded_at": "2026-03-31T18:35:26.096634",
+      "size_bytes": 234003
+    },
+    "hays/April+2026+Batch+6.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/April+2026+Batch+6.pdf",
+      "downloaded_at": "2026-03-31T18:35:27.220071",
+      "size_bytes": 938718
+    },
+    "hays/May+2026+Batch+1.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/May+2026+Batch+1.pdf",
+      "downloaded_at": "2026-03-31T18:35:28.198924",
+      "size_bytes": 186203
+    },
+    "hays/May+2026+Batch+2.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/May+2026+Batch+2.pdf",
+      "downloaded_at": "2026-03-31T18:35:29.247715",
+      "size_bytes": 577865
+    },
+    "hays/May+2026+Batch+3.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/May+2026+Batch+3.pdf",
+      "downloaded_at": "2026-03-31T18:35:30.320299",
+      "size_bytes": 575404
+    },
+    "hays/May+2026+Batch+4.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/May+2026+Batch+4.pdf",
+      "downloaded_at": "2026-03-31T18:35:31.295987",
+      "size_bytes": 170758
+    },
+    "hays/June+2026+Batch+1.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/June+2026+Batch+1.pdf",
+      "downloaded_at": "2026-03-31T18:35:32.263988",
+      "size_bytes": 178670
+    },
+    "hays/June+2026+Batch+2.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/June+2026+Batch+2.pdf",
+      "downloaded_at": "2026-03-31T18:35:33.173669",
+      "size_bytes": 97826
+    },
+    "hays/August+2026+Batch+1.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/August+2026+Batch+1.pdf",
+      "downloaded_at": "2026-03-31T18:35:34.121942",
+      "size_bytes": 85351
+    },
+    "bell/April 1.pdf": {
+      "url": "https://www.bellcountytx.com/April 1.pdf?t=202601211023240",
+      "downloaded_at": "2026-03-31T18:35:36.071628",
+      "size_bytes": 161353
+    },
+    "bell/April 2.pdf": {
+      "url": "https://www.bellcountytx.com/April 2.pdf?t=202601281224350",
+      "downloaded_at": "2026-03-31T18:35:37.063351",
+      "size_bytes": 506736
+    },
+    "bell/April 3.pdf": {
+      "url": "https://www.bellcountytx.com/April 3.pdf?t=202602111237370",
+      "downloaded_at": "2026-03-31T18:35:38.106963",
+      "size_bytes": 1390759
+    },
+    "bell/April 4.pdf": {
+      "url": "https://www.bellcountytx.com/April 4.pdf?t=202602181533570",
+      "downloaded_at": "2026-03-31T18:35:38.792812",
+      "size_bytes": 911775
+    },
+    "bell/April 5.pdf": {
+      "url": "https://www.bellcountytx.com/April 5.pdf?t=202602251656560",
+      "downloaded_at": "2026-03-31T18:35:39.464215",
+      "size_bytes": 2351273
+    },
+    "bell/April 6.pdf": {
+      "url": "https://www.bellcountytx.com/April 6.pdf?t=202603051104150",
+      "downloaded_at": "2026-03-31T18:35:40.221175",
+      "size_bytes": 4137761
+    },
+    "bell/April 7.pdf": {
+      "url": "https://www.bellcountytx.com/April 7.pdf?t=202603111156240",
+      "downloaded_at": "2026-03-31T18:35:40.886230",
+      "size_bytes": 1687720
+    },
+    "bell/April 8.pdf": {
+      "url": "https://www.bellcountytx.com/April 8.pdf?t=202603181631550",
+      "downloaded_at": "2026-03-31T18:35:41.720331",
+      "size_bytes": 4687495
+    },
+    "bell/May 1.pdf": {
+      "url": "https://www.bellcountytx.com/May 1.pdf?t=202602251657310",
+      "downloaded_at": "2026-03-31T18:35:42.310881",
+      "size_bytes": 101922
+    },
+    "bell/May 2.pdf": {
+      "url": "https://www.bellcountytx.com/May 2.pdf?t=202603051105370",
+      "downloaded_at": "2026-03-31T18:35:42.898868",
+      "size_bytes": 458290
+    },
+    "bell/May 3.pdf": {
+      "url": "https://www.bellcountytx.com/May 3.pdf?t=202603111157090",
+      "downloaded_at": "2026-03-31T18:35:43.486328",
+      "size_bytes": 345785
+    },
+    "bell/May 4.pdf": {
+      "url": "https://www.bellcountytx.com/May 4.pdf?t=202603181632350",
+      "downloaded_at": "2026-03-31T18:35:44.112179",
+      "size_bytes": 1082059
+    },
+    "bell/May 5.pdf": {
+      "url": "https://www.bellcountytx.com/May 5.pdf?t=202603251011130",
+      "downloaded_at": "2026-03-31T18:35:44.699555",
+      "size_bytes": 287522
+    },
+    "bell/June 1.pdf": {
+      "url": "https://www.bellcountytx.com/June 1.pdf?t=202603181633180",
+      "downloaded_at": "2026-03-31T18:35:45.287964",
+      "size_bytes": 292594
+    },
+    "bell/June 2.pdf": {
+      "url": "https://www.bellcountytx.com/June 2.pdf?t=202603251011510",
+      "downloaded_at": "2026-03-31T18:35:45.875652",
+      "size_bytes": 327953
+    },
+    "williamson/2024 Recording Fees (PDF).pdf": {
+      "url": "https://www.wilcotx.gov/DocumentCenter/View/8554/2024-County-Clerk-Recording-Fees-PDF?bidId=",
+      "downloaded_at": "2026-03-31T18:36:00.194293",
+      "size_bytes": 393901
+    }
+  },
   "processed_pdfs": {
     "04-21-2025_File_010.pdf": {
       "processed_at": "2026-03-31T12:58:10.487003",
