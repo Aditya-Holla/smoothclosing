@@ -14,7 +14,8 @@ relative contacts, and SMS status from the complete pipeline.
 
 import logging
 import os
-from datetime import date
+import re
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,31 @@ HEADER_ROW = [
     "Estimated Home Value",
     "Estimated Equity",
     "Equity Note",
-    "Phone Numbers",
-    "Relative Phones",
-    "Relatives",
+    "Owner Phone 1",
+    "Owner Phone 2",
+    "Owner Phone 3",
+    "Owner Age",
+    "Owner Deceased",
+]
+
+# Per-relative columns (repeated for Rel 1–6)
+for _i in range(1, 7):
+    HEADER_ROW.extend([
+        f"Rel {_i} Name",
+        f"Rel {_i} Relationship",
+        f"Rel {_i} Phone 1",
+        f"Rel {_i} Phone 2",
+        f"Rel {_i} Phone 3",
+        f"Rel {_i} Address",
+        f"Rel {_i} Same Addr?",
+        f"Rel {_i} Deceased",
+    ])
+
+HEADER_ROW.extend([
     "Date Added",
     "Status",
     "Notes",
-]
+])
 
 # Maps from CSV column names → row position
 FIELD_MAP = [
@@ -52,15 +71,68 @@ FIELD_MAP = [
     "estimated_home_value",
     "estimated_equity",
     "equity_note",
-    "phones_subject",
-    "phones_relatives",
-    "relatives_names",
-    # date_added is auto-filled
-    # status + notes are left blank for coworker
+    "phone_1",
+    "phone_2",
+    "phone_3",
+    "poi_age",
+    "poi_deceased",
 ]
 
-NUM_COLS = len(HEADER_ROW)  # 17 columns (A through Q)
-LAST_COL_LETTER = "Q"
+for _i in range(1, 7):
+    FIELD_MAP.extend([
+        f"rel_{_i}_name",
+        f"rel_{_i}_relationship",
+        f"rel_{_i}_phone_1",
+        f"rel_{_i}_phone_2",
+        f"rel_{_i}_phone_3",
+        f"rel_{_i}_address",
+        f"rel_{_i}_same_address",
+        f"rel_{_i}_deceased",
+    ])
+# date_added is auto-filled
+# status + notes are left blank for coworker
+
+NUM_COLS = len(HEADER_ROW)
+
+
+def _col_letter(n: int) -> str:
+    """Convert 1-based column number to Excel-style letter (1=A, 27=AA)."""
+    result = ""
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+LAST_COL_LETTER = _col_letter(NUM_COLS)
+
+
+def _normalize_date(val: str) -> str:
+    """Normalize various date formats to MM/DD/YYYY."""
+    val = val.strip()
+    if not val:
+        return ""
+    # Try "Month DD, YYYY" (e.g. "August 21, 2013")
+    try:
+        dt = datetime.strptime(val, "%B %d, %Y")
+        return dt.strftime("%m/%d/%Y")
+    except ValueError:
+        pass
+    # Try "Month DD YYYY" without comma
+    try:
+        dt = datetime.strptime(val, "%B %d %Y")
+        return dt.strftime("%m/%d/%Y")
+    except ValueError:
+        pass
+    # Try MM/DD/YYYY or M/D/YYYY (already correct format, just normalize)
+    m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', val)
+    if m:
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{m.group(3)}"
+    # Try YYYY-MM-DD
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', val)
+    if m:
+        return f"{m.group(2)}/{m.group(3)}/{m.group(1)}"
+    return val
 
 
 def _get_client():
@@ -185,7 +257,11 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
             # Clean up "nan" strings from pandas
             if val is None or str(val).strip().lower() == "nan":
                 val = ""
-            row.append(str(val))
+            val = str(val)
+            # Normalize dates to MM/DD/YYYY
+            if field in ("filing_date", "sale_date"):
+                val = _normalize_date(val)
+            row.append(val)
 
         row.append(today)  # date_added
         row.append("")     # status (coworker fills in)

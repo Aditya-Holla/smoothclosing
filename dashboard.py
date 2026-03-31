@@ -250,26 +250,35 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
                             st.success(f"All {len(all_pdf_paths)} PDFs already processed. Nothing new to extract.")
                         else:
                             st.warning("No PDFs found in input_pdfs/. Nothing to extract.")
-                        # Not an error — just nothing new. Still allow sheets push of existing data.
+                        # Not an error — just nothing new. Load existing leads so skip trace can run.
                         pipeline_ok = True
-                        st.session_state["leads_records"] = []
+                        existing_csv = Path("leads_with_equity.csv")
+                        if existing_csv.exists():
+                            _df = pd.read_csv(existing_csv)
+                            st.session_state["leads_records"] = _df.to_dict(orient="records")
+                            st.info(f"Loaded {len(_df)} existing leads for skip trace.")
+                        else:
+                            st.session_state["leads_records"] = []
                     else:
                         st.write(f"**{len(pdf_paths)}** new PDF(s) to process ({skipped} already done).")
                         all_raw: list[dict] = []
                         s2_bar = st.progress(0, text="Processing PDFs...")
                         for i, pdf_path in enumerate(pdf_paths):
                             s2_bar.progress((i + 1) / len(pdf_paths), text=f"{pdf_path.name}...")
+                            raw = []
                             try:
                                 text, _ = extract_text_from_pdf(pdf_path)
                             except Exception as e:
                                 logging.warning(f"Could not read {pdf_path.name}: {e}")
+                                rel_key = str(pdf_path.relative_to(src_path))
+                                mark_processed(pipe_state, rel_key, records_extracted=0)
                                 continue
                             if text.strip():
                                 raw = parse_notice(text, source_file=pdf_path.name)
                                 all_raw.extend(raw)
                             # Mark as processed
                             rel_key = str(pdf_path.relative_to(src_path))
-                            mark_processed(pipe_state, rel_key, records_extracted=len(raw) if text.strip() else 0)
+                            mark_processed(pipe_state, rel_key, records_extracted=len(raw))
                         s2_bar.empty()
 
                         valid_records = clean_records(all_raw)
@@ -336,8 +345,13 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
             # ====== STEP 3: Skip Trace (headless) ======
             if pipeline_ok:
                 records_to_trace = st.session_state.get("leads_records", [])
-                # Only trace leads with owner names
-                records_to_trace = [r for r in records_to_trace if r.get("owner_name", "").strip()]
+                # Only trace leads with owner names AND valid addresses
+                records_to_trace = [
+                    r for r in records_to_trace
+                    if str(r.get("owner_name", "")).strip()
+                    and str(r.get("property_address", "")).strip()
+                    and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
+                ]
                 if not records_to_trace:
                     st.info("No new leads with owner names to trace. Everything is up to date.")
                 else:
@@ -366,13 +380,13 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
                             w.writerows(records_to_trace)
 
                         with st.spinner("Running Skip Genie (headless)... this may take several minutes."):
-                            asyncio.run(run_skip(str(input_path), str(output_path), headless=True))
+                            asyncio.run(run_skip(str(input_path), str(output_path), headless=True, max_relatives=6))
 
                         if output_path.exists():
                             traced_df = pd.read_csv(output_path)
                             st.session_state["traced_df"] = traced_df
                             st.session_state["traced_records"] = traced_df.to_dict(orient="records")
-                            found = traced_df["phones_subject"].astype(str).str.strip().ne("").sum()
+                            found = traced_df["phone_1"].astype(str).str.strip().replace("nan", "").ne("").sum()
                             st.success(f"Step 3 complete — **{found}/{len(traced_df)}** leads with phone numbers.")
                             st.dataframe(traced_df, use_container_width=True, height=400)
                             st.download_button(
@@ -724,8 +738,13 @@ with tab2:
                 input_path = Path("leads_tmp_trace.csv")
                 output_path = Path("leads_traced.csv")
 
-                # Only trace leads with owner names
-                traceable = [r for r in records_to_trace if r.get("owner_name", "").strip()]
+                # Only trace leads with owner names AND valid addresses
+                traceable = [
+                    r for r in records_to_trace
+                    if str(r.get("owner_name", "")).strip()
+                    and str(r.get("property_address", "")).strip()
+                    and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
+                ]
                 if sg_limit > 0:
                     traceable = traceable[:int(sg_limit)]
 
@@ -743,13 +762,13 @@ with tab2:
 
                 try:
                     with st.spinner("Running Skip Genie (headless)… this may take several minutes."):
-                        asyncio.run(run_skip(str(input_path), str(output_path), headless=True))
+                        asyncio.run(run_skip(str(input_path), str(output_path), headless=True, max_relatives=6))
 
                     if output_path.exists():
                         traced_df = pd.read_csv(output_path)
                         st.session_state["traced_df"] = traced_df
                         st.session_state["traced_records"] = traced_df.to_dict(orient="records")
-                        found = traced_df["phones_subject"].astype(str).str.strip().ne("").sum()
+                        found = traced_df["phone_1"].astype(str).str.strip().replace("nan", "").ne("").sum()
                         st.success(f"Skip trace complete — {found}/{len(traced_df)} leads with phones.")
                         st.dataframe(traced_df, use_container_width=True, height=400)
                         st.download_button("Download leads_traced.csv",

@@ -48,13 +48,9 @@ def parse_owner_name(owner_name: str) -> list[dict]:
     # Remove trailing "And" / "Nd" / "&" with no second person
     owner_name = re.sub(r'\s+(?:And|Nd|&)\s*$', '', owner_name, flags=re.IGNORECASE).strip()
 
-    separators = [" And ", " Nd ", " & ", " and "]
-    names = [owner_name]
-    for sep in separators:
-        split_names = []
-        for n in names:
-            split_names.extend(n.split(sep))
-        names = split_names
+    # Split on " And ", " Nd ", " & " (case-insensitive)
+    names = re.split(r'\s+(?:and|nd)\s+|\s*&\s*', owner_name, flags=re.IGNORECASE)
+    names = [n.strip() for n in names if n and n.strip()]
 
     people = []
     for name in names:
@@ -220,7 +216,7 @@ def search_person(page, person: dict, address: dict) -> dict:
             return
         field = page.locator(f"input[placeholder*='{placeholder}']").first
         field.click()
-        field.press("Control+a")
+        field.press("Meta+a")
         field.press("Backspace")
         field.type(value, delay=30)
 
@@ -345,7 +341,7 @@ def scrape_results(page) -> dict:
             results["addresses"].append(line)
 
     # Extract indicators
-    for indicator in ['Bankruptcies', 'Liens', 'Judgement']:
+    for indicator in ['Bankruptcies', 'Liens', 'Judgements']:
         ind_match = re.search(rf'{indicator}:\s*(.*?)(?:\n|$)', page_text)
         if ind_match:
             results[indicator.lower()] = ind_match.group(1).strip()
