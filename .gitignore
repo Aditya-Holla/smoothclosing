@@ -1,0 +1,46 @@
+# Credentials & tokens (NEVER commit these)
+.env
+credentials.json
+token.json
+*.pem
+*.key
+
+# Pipeline outputs (generated on each run)
+leads.csv
+leads_old.csv
+leads_with_equity.csv
+leads_traced.csv
+leads_sms_sent.csv
+leads_tmp_trace.csv
+skip_genie_results.csv
+travis_foreclosures.csv
+
+# State (tracked separately — committed to keep incremental processing)
+# pipeline_state.json  ← intentionally NOT ignored
+
+# Downloaded PDFs (too large for git)
+input_pdfs/
+
+# Logs
+*.log
+automation.log
+.last_run_date
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Playwright browser cache
+.skipgenie_session/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
