@@ -1,5 +1,527 @@
 {
   "downloaded_pdfs": {},
-  "processed_pdfs": {},
-  "known_lead_keys": []
+  "processed_pdfs": {
+    "bell/April 1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819611",
+      "records_extracted": 1
+    },
+    "bell/April 2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819644",
+      "records_extracted": 1
+    },
+    "bell/April 3.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819664",
+      "records_extracted": 5
+    },
+    "bell/April 4.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819682",
+      "records_extracted": 4
+    },
+    "bell/April 5.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819699",
+      "records_extracted": 1
+    },
+    "bell/April 6.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819716",
+      "records_extracted": 10
+    },
+    "bell/April 7.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819734",
+      "records_extracted": 5
+    },
+    "bell/April 8.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819751",
+      "records_extracted": 5
+    },
+    "bell/June 1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819769",
+      "records_extracted": 2
+    },
+    "bell/June 2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819786",
+      "records_extracted": 1
+    },
+    "bell/May 1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819802",
+      "records_extracted": 0
+    },
+    "bell/May 2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819818",
+      "records_extracted": 1
+    },
+    "bell/May 3.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819835",
+      "records_extracted": 0
+    },
+    "bell/May 4.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819851",
+      "records_extracted": 4
+    },
+    "bell/May 5.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819867",
+      "records_extracted": 1
+    },
+    "burnet/Bubbbles  Barks Holdings 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819883",
+      "records_extracted": 0
+    },
+    "burnet/Comm. Court Certificate.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819900",
+      "records_extracted": 0
+    },
+    "burnet/FEES 01012024.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819916",
+      "records_extracted": 0
+    },
+    "burnet/Fournier 1 - posted.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819932",
+      "records_extracted": 1
+    },
+    "burnet/Fournier 2 - posted.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819948",
+      "records_extracted": 1
+    },
+    "burnet/Garcia 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819964",
+      "records_extracted": 1
+    },
+    "burnet/Graham 4.7.26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819980",
+      "records_extracted": 1
+    },
+    "burnet/Hobbs 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.819997",
+      "records_extracted": 1
+    },
+    "burnet/Jennings 06.02.2026.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820030",
+      "records_extracted": 0
+    },
+    "burnet/LTX Holdings  4.7.2026 5.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820049",
+      "records_extracted": 0
+    },
+    "burnet/LTX Holdings 4.7.2026 3.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820065",
+      "records_extracted": 0
+    },
+    "burnet/LTX Holdings 4.7.2026 4.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820081",
+      "records_extracted": 0
+    },
+    "burnet/LTX Holdings 4.7.2026_Part1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820097",
+      "records_extracted": 0
+    },
+    "burnet/LTX Holdings4.7.2026_Part2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820113",
+      "records_extracted": 0
+    },
+    "burnet/Lawson and Bean 04.07.2026.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820129",
+      "records_extracted": 1
+    },
+    "burnet/Longoria-Salazar 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820145",
+      "records_extracted": 1
+    },
+    "burnet/Martich-Barbee 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820161",
+      "records_extracted": 0
+    },
+    "burnet/McCarty 5-5-26 1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820177",
+      "records_extracted": 1
+    },
+    "burnet/Nelson 5-5-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820194",
+      "records_extracted": 1
+    },
+    "burnet/Posted Ramirez Foreclosure Posting.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820210",
+      "records_extracted": 0
+    },
+    "burnet/Rocking R and R Ranch.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820226",
+      "records_extracted": 0
+    },
+    "burnet/Schwartz jr 4-4-26 Posted.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820242",
+      "records_extracted": 1
+    },
+    "burnet/Vanderway-Sostak 5-5-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820258",
+      "records_extracted": 1
+    },
+    "burnet/Whitaker Bostick 4.7.2026.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820274",
+      "records_extracted": 0
+    },
+    "burnet/Woodley 4-7-26.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820290",
+      "records_extracted": 1
+    },
+    "hays/2022-Hays-District-Clerk-Civil-Fees.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820307",
+      "records_extracted": 0
+    },
+    "hays/April+2026+Batch+1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820323",
+      "records_extracted": 1
+    },
+    "hays/April+2026+Batch+2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820340",
+      "records_extracted": 2
+    },
+    "hays/April+2026+Batch+3.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820785",
+      "records_extracted": 3
+    },
+    "hays/April+2026+Batch+4.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820801",
+      "records_extracted": 2
+    },
+    "hays/April+2026+Batch+5-3902cd48.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820817",
+      "records_extracted": 1
+    },
+    "hays/April+2026+Batch+6.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820832",
+      "records_extracted": 2
+    },
+    "hays/August+2026+Batch+1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820847",
+      "records_extracted": 0
+    },
+    "hays/FY24_Budget_Calendar_rev-c10fb121.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820863",
+      "records_extracted": 0
+    },
+    "hays/Foreclosures.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820879",
+      "records_extracted": 1
+    },
+    "hays/June+2026+Batch+1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820894",
+      "records_extracted": 1
+    },
+    "hays/June+2026+Batch+2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820909",
+      "records_extracted": 1
+    },
+    "hays/May+2026+Batch+1.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820924",
+      "records_extracted": 1
+    },
+    "hays/May+2026+Batch+2.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820939",
+      "records_extracted": 1
+    },
+    "hays/May+2026+Batch+3.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820955",
+      "records_extracted": 2
+    },
+    "hays/May+2026+Batch+4.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820970",
+      "records_extracted": 1
+    },
+    "hays/Online-Resources.pdf": {
+      "processed_at": "2026-04-01T15:57:43.820985",
+      "records_extracted": 0
+    },
+    "williamson/2024 Recording Fees (PDF).pdf": {
+      "processed_at": "2026-04-01T15:57:43.821000",
+      "records_extracted": 0
+    }
+  },
+  "known_lead_keys": [
+    [
+      "abbigale walton and preston walton",
+      "6131 rattlesnake trail, belton, tx 76513."
+    ],
+    [
+      "adrienne s mckinney and moty m mckinney iii",
+      "1904 prestige loop killeen, tx 76549"
+    ],
+    [
+      "afordahomes",
+      "912 south 6th street in temple, tx."
+    ],
+    [
+      "april garcia",
+      "316 pepper mill loop burnet, tx 78611"
+    ],
+    [
+      "ayre'ale a sally, and louis senat",
+      ""
+    ],
+    [
+      "brent mccarty",
+      ""
+    ],
+    [
+      "cathryn fannin",
+      "4303 capri dr, killeen, tx 76549"
+    ],
+    [
+      "charles william kenneaster -",
+      "6109 bridgewood drive, killeen, tx 76549"
+    ],
+    [
+      "chester r. ruffin, sr",
+      "2606 blue jay drive, temple, tx 76502"
+    ],
+    [
+      "christina kay ‘d steven l. bland",
+      "4000 bull run dr, killeen, tx 76549"
+    ],
+    [
+      "christopher",
+      "2305 skipcha drive, harker heights, tx 76548"
+    ],
+    [
+      "christopher a hiebert",
+      "148 copper ln kyle, tx 78640"
+    ],
+    [
+      "cody lynn dodson and rosario esquivel",
+      "3814 twilight dr, temple, tx 76502"
+    ],
+    [
+      "cynthia marie colon",
+      "131 cotoneaster cove kyle, tx 78640"
+    ],
+    [
+      "daniel villescaz and catina villescaz",
+      "353 nottingham loop kyle, tx 78640"
+    ],
+    [
+      "danilo f. chua",
+      "607 deborah kay dr, killeen, tx 76542"
+    ],
+    [
+      "danny lee",
+      "712 south stagecoach trail, san marcos, tx 78666"
+    ],
+    [
+      "darrell wgksor",
+      "491 white cedar trl, killeen, tx 76542"
+    ],
+    [
+      "david n'segrest",
+      "410 sunrise blf temple, tx 76502-7069"
+    ],
+    [
+      "devern and elizabeth alemany",
+      "7006 reginald drive killeen. tx 76549"
+    ],
+    [
+      "dioce stroud",
+      ""
+    ],
+    [
+      "dominic l. gonzales",
+      "16004 arbor trail buda, tx 78610"
+    ],
+    [
+      "donna field",
+      "8424 brahma plains road temple. tx 76502"
+    ],
+    [
+      "ee pine",
+      "4303 capri dr, killeen, tx 76549"
+    ],
+    [
+      "elaine marie broccolo and beau thomas walker",
+      ""
+    ],
+    [
+      "erma bey eg",
+      "2804 greystone dr, killeen, tx 76549"
+    ],
+    [
+      "gilbert fang, and rose fang",
+      ""
+    ],
+    [
+      "glenn j. robertson",
+      "734 treadwell lane, kyle, tx 78640"
+    ],
+    [
+      "helen age",
+      "3600 birdcreek plaza, bell county, tx 76502"
+    ],
+    [
+      "isaiah michael yepez and julia yepez",
+      "309 king circle, temple, tx 76501-2660"
+    ],
+    [
+      "jaime magallanes and jaclyn marie magallanes",
+      "321 pincherry pass san marcos tx 78666"
+    ],
+    [
+      "james a tarpley-farmer and aisha tarpley",
+      "9014 devonshire court, killeen, tx 76542"
+    ],
+    [
+      "james graham, tenisha graham and paulette f. graham",
+      "220 south pierce street, burnet, tx 78611"
+    ],
+    [
+      "jean guy fournier",
+      "6700 n. new braunfels avenue, san antonio, tx 78209"
+    ],
+    [
+      "jean guy fournier and kayla l. fournier",
+      "6700 n. new braunfels avenue, san antonio, tx 78209"
+    ],
+    [
+      "jeff woodley",
+      "17999 fm 963"
+    ],
+    [
+      "jennifer salas",
+      "315 gladiola loop"
+    ],
+    [
+      "john pmitchell",
+      "57 bluebonnet loop belton, tx 76513-9206"
+    ],
+    [
+      "joy vanderway and john sostak",
+      "207 gateway parkway"
+    ],
+    [
+      "juan r. guinbs and julia a. gumbs",
+      ""
+    ],
+    [
+      "kyle jason lawson and nyomi lee bean",
+      "4911 cr 206, lampasas, tx 76550"
+    ],
+    [
+      "laurie lynn and john michael aceves",
+      "4225 wingren drive, suite 105, irving, tx 75602"
+    ],
+    [
+      "leonardo huerta",
+      ""
+    ],
+    [
+      "luis daniel",
+      "5642 cindy lane"
+    ],
+    [
+      "mary mitchell and stasey mitchell",
+      "1 palo pinto path, wimberley, tx 78676"
+    ],
+    [
+      "matthew james munroe",
+      ""
+    ],
+    [
+      "matthew w holtzclaw",
+      "190 casper cove, kyle, tx 78640"
+    ],
+    [
+      "michelle lee hobbs",
+      "205 sagehill drive granite shoals, tx 78654"
+    ],
+    [
+      "mm me rar gorovies",
+      "201 west dale avenue, nolanville, tx 76559"
+    ],
+    [
+      "nadya martinez-cortes",
+      "1521 hillside dr, temple, tx 76502"
+    ],
+    [
+      "nancy and ryan s. velte",
+      "3609 las cienega blvd, temple, tx 76502"
+    ],
+    [
+      "natalie nicole longoria and johnny trevor salazar",
+      ""
+    ],
+    [
+      "ovontae fulton",
+      "42026 pad, plano, tx 75075"
+    ],
+    [
+      "patrick ryan nelson and jessica nelson",
+      ""
+    ],
+    [
+      "pecos housing finance corporation",
+      "490 barnes drive, san marcos, tx 78666"
+    ],
+    [
+      "queen m. broussard",
+      "607 e union, temple, tx 76501"
+    ],
+    [
+      "ray allen schwartz jr",
+      "707 oak ln cottonwood shores, tx 78657"
+    ],
+    [
+      "ray o. whisenant",
+      ""
+    ],
+    [
+      "rocky ward and cassie ward",
+      "1323 merritt street temple. tx 76504"
+    ],
+    [
+      "roland gonzales",
+      "356 spiny lizard ln san marcos, tx 78666"
+    ],
+    [
+      "sandra lee ramirez",
+      "285 mauve ln, kyle, tx 78640"
+    ],
+    [
+      "shana wallace",
+      "369 lbj lane kyle, tx 78640"
+    ],
+    [
+      "shane m grizzard and cecilia mckinney",
+      "2106 lago trail, killeen, tx 76543"
+    ],
+    [
+      "sharon r",
+      "2106 lago trail, killeen, tx 76543"
+    ],
+    [
+      "surge garraway and kadejiah garraway",
+      ""
+    ],
+    [
+      "taneika hairston and james hairston",
+      "6801 aquamarine dr, killeen, tx 76542"
+    ],
+    [
+      "tex. prop",
+      "712 south stagecoach trail, san marcos, tx 78666"
+    ],
+    [
+      "tonnica nicole renee wooden and stephan lamar wooden",
+      "3708 rusack dr, killeen, tx 76542"
+    ],
+    [
+      "tyler somer and bianca izamare stromer",
+      "20405 sar highway 249, suite 170, houston, tx 77670"
+    ],
+    [
+      "ulysses omar casanas",
+      "2305 skipcha drive, harker heights, tx 76548"
+    ],
+    [
+      "vicente v ramos",
+      "5202 milky way ave, killeen, tx 76542"
+    ],
+    [
+      "vincent p diaz and julie ann diaz",
+      ""
+    ]
+  ]
 }
