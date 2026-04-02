@@ -808,10 +808,26 @@ with tab3:
     else:
         # Count sendable — skip_genie_search outputs phone_1, phone_2, phone_3
         def _get_nums(r):
-            return [str(r.get(f"phone_{i}", "")).strip()
-                    for i in range(1, 4)
-                    if str(r.get(f"phone_{i}", "")).strip()
-                    and str(r.get(f"phone_{i}", "")).strip().lower() not in ("nan", "")]
+            # Owner: first valid phone only
+            seen = set()
+            nums = []
+            for i in range(1, 4):
+                num = str(r.get(f"phone_{i}", "")).strip()
+                if num and num.lower() not in ("nan", ""):
+                    nums.append(num)
+                    seen.add(num)
+                    break
+            # Same-address relatives: first valid phone per relative, skip dupes
+            for ri in range(1, 7):
+                same_addr = str(r.get(f"rel_{ri}_same_address", "")).strip().lower()
+                if same_addr in ("yes", "true", "1"):
+                    for pi in range(1, 4):
+                        num = str(r.get(f"rel_{ri}_phone_{pi}", "")).strip()
+                        if num and num.lower() not in ("nan", "") and num not in seen:
+                            nums.append(num)
+                            seen.add(num)
+                            break
+            return nums
 
         sendable = [r for r in traced_records if _get_nums(r)]
         total_nums = sum(len(_get_nums(r)) for r in sendable)

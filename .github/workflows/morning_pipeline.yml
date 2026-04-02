@@ -51,12 +51,17 @@ jobs:
           RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
         run: python county_downloader.py
 
-      - name: Run full pipeline (extract → equity → skip trace → Google Sheet)
+      - name: Run full pipeline (extract → equity → skip trace → Google Sheet → SMS)
         env:
           RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
           SKIPGENIE_USERNAME: ${{ secrets.SKIPGENIE_USERNAME }}
           SKIPGENIE_PASSWORD: ${{ secrets.SKIPGENIE_PASSWORD }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          RC_CLIENT_ID: ${{ secrets.RC_CLIENT_ID }}
+          RC_CLIENT_SECRET: ${{ secrets.RC_CLIENT_SECRET }}
+          RC_JWT_TOKEN: ${{ secrets.RC_JWT_TOKEN }}
+          RC_FROM_NUMBER: ${{ secrets.RC_FROM_NUMBER }}
+          SENDER_NAME: ${{ secrets.SENDER_NAME }}
         run: python main.py
 
       - name: Commit updated state

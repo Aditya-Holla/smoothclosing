@@ -287,7 +287,30 @@ def run_pipeline(input_folder: str, output_csv: str) -> None:
         logger.info("GOOGLE_SHEET_ID not set — skipping Google Sheets export.")
         logger.info("Set GOOGLE_SHEET_ID and GOOGLE_SHEETS_CREDS env vars to enable.")
 
-    # 11. Update state
+    # 11. SMS outreach to new leads
+    rc_ready = all([
+        os.environ.get("RC_CLIENT_ID"),
+        os.environ.get("RC_CLIENT_SECRET"),
+        os.environ.get("RC_JWT_TOKEN"),
+        os.environ.get("RC_FROM_NUMBER"),
+    ])
+    if rc_ready:
+        try:
+            from ringcentral_sms import run as run_sms
+            sms_csv = enriched_csv.replace(".csv", "_sms_sent.csv")
+            logger.info("Running SMS outreach...")
+            run_sms(
+                input_csv=enriched_csv,
+                output_csv=sms_csv,
+                sender_name=os.environ.get("SENDER_NAME", ""),
+            )
+            logger.info(f"  → SMS results written to {sms_csv}")
+        except Exception as e:
+            logger.warning(f"SMS outreach failed ({e}), continuing.")
+    else:
+        logger.info("RingCentral credentials not set — skipping SMS outreach.")
+
+    # 12. Update state
     for pdf_path in pdf_paths:
         rel_key = str(pdf_path.relative_to(input_dir))
         count = sum(1 for r in valid_records if r.get("source_file") == pdf_path.name)

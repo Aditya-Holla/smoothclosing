@@ -177,13 +177,31 @@ def run(
         message = render_message(active_template, rec, sender_name)
         rec["sms_template"] = active_template[:60] + "…"
 
-        # Collect all numbers from phone_1, phone_2, phone_3 (skip_genie_search output)
-        all_numbers = [
-            str(rec.get(f"phone_{i}", "")).strip()
-            for i in range(1, 4)
-            if str(rec.get(f"phone_{i}", "")).strip()
-            and str(rec.get(f"phone_{i}", "")).strip().lower() not in ("nan", "")
-        ]
+        # Owner: first valid phone only
+        owner_number = None
+        for i in range(1, 4):
+            num = str(rec.get(f"phone_{i}", "")).strip()
+            if num and num.lower() not in ("nan", ""):
+                owner_number = num
+                break
+
+        seen_numbers = set()
+        if owner_number:
+            seen_numbers.add(owner_number)
+
+        # Relatives at same address: first valid phone per relative, skip dupes
+        relative_numbers = []
+        for ri in range(1, 7):
+            same_addr = str(rec.get(f"rel_{ri}_same_address", "")).strip().lower()
+            if same_addr in ("yes", "true", "1"):
+                for pi in range(1, 4):
+                    num = str(rec.get(f"rel_{ri}_phone_{pi}", "")).strip()
+                    if num and num.lower() not in ("nan", "") and num not in seen_numbers:
+                        relative_numbers.append(num)
+                        seen_numbers.add(num)
+                        break  # first valid phone per relative only
+
+        all_numbers = ([owner_number] if owner_number else []) + relative_numbers
 
         statuses = []
 
@@ -195,18 +213,27 @@ def run(
             continue
 
         for number in all_numbers:
+            # Wait 5 min before texting relatives in the same family
+            if number in relative_numbers and statuses:
+                wait = 300  # 5 minutes
+                if not dry_run:
+                    logger.info(f"  Waiting {wait // 60}m before texting relative…")
+                    time.sleep(wait)
+
             label = f"{owner} @ {number}"
             if dry_run:
-                logger.info(f"  [DRY RUN] Would text {label}:\n    {message[:80]}…")
+                is_rel = "(relative)" if number in relative_numbers else "(owner)"
+                logger.info(f"  [DRY RUN] Would text {label} {is_rel}:\n    {message[:80]}…")
                 statuses.append(f"{number}:dry_run")
                 continue
 
             try:
                 send_sms(access_token, from_number, number, message)
-                logger.info(f"  Sent → {label}")
+                is_rel = "(relative)" if number in relative_numbers else "(owner)"
+                logger.info(f"  Sent → {label} {is_rel}")
                 statuses.append(f"{number}:sent")
                 sent_total += 1
-                time.sleep(delay_seconds)   # stay within rate limits
+                time.sleep(delay_seconds)   # small delay between sends
             except requests.HTTPError as e:
                 err = e.response.text if e.response else str(e)
                 logger.error(f"  Failed → {label}: {err}")
