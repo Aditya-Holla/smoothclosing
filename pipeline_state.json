@@ -1,5 +1,21 @@
 {
-  "downloaded_pdfs": {},
+  "downloaded_pdfs": {
+    "hays/June+2026+Batch+3.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/June+2026+Batch+3.pdf",
+      "downloaded_at": "2026-04-02T15:01:22.484986",
+      "size_bytes": 49936
+    },
+    "bell/May 6.pdf": {
+      "url": "https://www.bellcountytx.com/May 6.pdf?t=202604011628330",
+      "downloaded_at": "2026-04-02T15:01:31.614831",
+      "size_bytes": 2636187
+    },
+    "bell/June 3.pdf": {
+      "url": "https://www.bellcountytx.com/June 3.pdf?t=202604011629150",
+      "downloaded_at": "2026-04-02T15:01:33.219992",
+      "size_bytes": 623137
+    }
+  },
   "processed_pdfs": {
     "bell/April 1.pdf": {
       "processed_at": "2026-04-01T15:57:43.819611",
@@ -232,6 +248,18 @@
     "williamson/2024 Recording Fees (PDF).pdf": {
       "processed_at": "2026-04-01T15:57:43.821000",
       "records_extracted": 0
+    },
+    "bell/June 3.pdf": {
+      "processed_at": "2026-04-02T15:07:49.314141",
+      "records_extracted": 1
+    },
+    "bell/May 6.pdf": {
+      "processed_at": "2026-04-02T15:07:49.314162",
+      "records_extracted": 9
+    },
+    "hays/June+2026+Batch+3.pdf": {
+      "processed_at": "2026-04-02T15:07:49.314172",
+      "records_extracted": 1
     }
   },
   "known_lead_keys": [
@@ -246,6 +274,10 @@
     [
       "afordahomes",
       "912 south 6th street in temple, tx."
+    ],
+    [
+      "alyssa perez. an unmarried person and matthew paul perez",
+      "3802 brooklawn drive temple, tx 76502"
     ],
     [
       "april garcia",
@@ -308,12 +340,20 @@
       "491 white cedar trl, killeen, tx 76542"
     ],
     [
+      "darrick koponen",
+      "1320 greenway drive, suite 780 irving, tx 75038"
+    ],
+    [
       "david n'segrest",
       "410 sunrise blf temple, tx 76502-7069"
     ],
     [
       "devern and elizabeth alemany",
       "7006 reginald drive killeen. tx 76549"
+    ],
+    [
+      "diego olalde",
+      "15072 armstrong rd., salado, tx 76571 (the"
     ],
     [
       "dioce stroud",
@@ -338,6 +378,10 @@
     [
       "erma bey eg",
       "2804 greystone dr, killeen, tx 76549"
+    ],
+    [
+      "funds being made payable to prestige default services",
+      "2179 pirtle dr salado, tx 76571-6195"
     ],
     [
       "gilbert fang, and rose fang",
@@ -388,6 +432,14 @@
       "57 bluebonnet loop belton, tx 76513-9206"
     ],
     [
+      "johnothan m hernandez",
+      "2905 transit drive killeen. tx 76543"
+    ],
+    [
+      "jose hernandez valdez and maria valdez",
+      "7015 kevin dr, temple, tx 76502"
+    ],
+    [
       "joy vanderway and john sostak",
       "207 gateway parkway"
     ],
@@ -402,6 +454,10 @@
     [
       "laurie lynn and john michael aceves",
       "4225 wingren drive, suite 105, irving, tx 75602"
+    ],
+    [
+      "leodanis gomez pena and eniacindy viridiana amador",
+      "115 rough bark st, buda, tx 78610"
     ],
     [
       "leonardo huerta",
@@ -492,6 +548,10 @@
       "2106 lago trail, killeen, tx 76543"
     ],
     [
+      "shernett chambers",
+      "7608 melanite dr killeen, tx 76542"
+    ],
+    [
       "surge garraway and kadejiah garraway",
       ""
     ],
@@ -500,8 +560,20 @@
       "6801 aquamarine dr, killeen, tx 76542"
     ],
     [
+      "teresa l whitman an rovides",
+      "7015 kevin dr, temple, tx 76502"
+    ],
+    [
       "tex. prop",
       "712 south stagecoach trail, san marcos, tx 78666"
+    ],
+    [
+      "the conditions of sale",
+      "5851 n. dallas parkway, addison, tx 75001"
+    ],
+    [
+      "the south boundary fine of said lot t",
+      "00 p.m. and, belton, tx 76513"
     ],
     [
       "tonnica nicole renee wooden and stephan lamar wooden",
