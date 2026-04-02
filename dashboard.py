@@ -345,13 +345,26 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
 
             # ====== STEP 3: Skip Trace (headless) ======
             if pipeline_ok:
-                records_to_trace = st.session_state.get("leads_records", [])
-                # Only trace leads with valid addresses (owner name optional with address-first search)
-                records_to_trace = [
-                    r for r in records_to_trace
-                    if str(r.get("property_address", "")).strip()
-                    and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
-                ]
+                all_leads = st.session_state.get("leads_records", [])
+                # Only trace leads with valid addresses AND equity >= 65% (if equity data available)
+                records_to_trace = []
+                skipped_low_equity = 0
+                for r in all_leads:
+                    addr = str(r.get("property_address", "")).strip()
+                    if not addr or addr.lower() in ("", "nan", "none"):
+                        continue
+                    # Check equity percentage — skip trace if below 65%
+                    eq_str = str(r.get("equity_pct", "")).strip().replace("%", "")
+                    if eq_str and eq_str.lower() != "nan":
+                        try:
+                            if float(eq_str) < 65:
+                                skipped_low_equity += 1
+                                continue
+                        except ValueError:
+                            pass
+                    records_to_trace.append(r)
+                if skipped_low_equity:
+                    st.info(f"Skipped **{skipped_low_equity}** lead(s) with equity below 65%.")
                 if not records_to_trace:
                     st.info("No new leads with valid addresses to trace. Everything is up to date.")
                 else:
@@ -739,12 +752,24 @@ with tab2:
                 input_path = Path("leads_tmp_trace.csv")
                 output_path = Path("leads_traced.csv")
 
-                # Only trace leads with valid addresses (owner name optional with address-first search)
-                traceable = [
-                    r for r in records_to_trace
-                    if str(r.get("property_address", "")).strip()
-                    and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
-                ]
+                # Only trace leads with valid addresses AND equity >= 65% (if available)
+                traceable = []
+                skipped_eq = 0
+                for r in records_to_trace:
+                    addr = str(r.get("property_address", "")).strip()
+                    if not addr or addr.lower() in ("", "nan", "none"):
+                        continue
+                    eq_str = str(r.get("equity_pct", "")).strip().replace("%", "")
+                    if eq_str and eq_str.lower() != "nan":
+                        try:
+                            if float(eq_str) < 65:
+                                skipped_eq += 1
+                                continue
+                        except ValueError:
+                            pass
+                    traceable.append(r)
+                if skipped_eq:
+                    st.info(f"Skipped **{skipped_eq}** lead(s) with equity below 65%.")
                 if sg_limit > 0:
                     traceable = traceable[:int(sg_limit)]
 
@@ -829,8 +854,21 @@ with tab3:
                             break
             return nums
 
-        sendable = [r for r in traced_records if _get_nums(r)]
+        # Filter out leads with equity below 65%
+        def _passes_equity(r):
+            eq_str = str(r.get("equity_pct", "")).strip().replace("%", "")
+            if eq_str and eq_str.lower() != "nan":
+                try:
+                    return float(eq_str) >= 65
+                except ValueError:
+                    pass
+            return True  # no equity data = allow
+
+        sendable = [r for r in traced_records if _get_nums(r) and _passes_equity(r)]
+        low_equity_skipped = sum(1 for r in traced_records if _get_nums(r) and not _passes_equity(r))
         total_nums = sum(len(_get_nums(r)) for r in sendable)
+        if low_equity_skipped:
+            st.info(f"Skipped **{low_equity_skipped}** lead(s) with equity below 65%.")
         st.write(f"**{len(sendable)}** leads with phone numbers — **{total_nums}** total numbers to text.")
 
         # Message templates — rotate randomly per lead

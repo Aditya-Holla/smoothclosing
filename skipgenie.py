@@ -527,14 +527,7 @@ async def _check_deceased(page) -> bool:
                 return false;
             }
         """)
-        if scoped:
-            return True
-        # Fallback: check body but only in result-related sections
-        body_text = await page.inner_text("body")
-        # Look for "Deceased" near the person's name/header, not just anywhere
-        if re.search(r'Result\s*:.*?deceased', body_text, re.IGNORECASE | re.DOTALL):
-            return True
-        return False
+        return scoped
     except Exception:
         return False
 

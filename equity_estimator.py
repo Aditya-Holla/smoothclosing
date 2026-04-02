@@ -199,6 +199,7 @@ def calculate_equity(record: dict) -> dict:
     result["remaining_balance"] = ""
     result["estimated_home_value"] = ""
     result["estimated_equity"] = ""
+    result["equity_pct"] = ""
     result["equity_note"] = ""
     result["needs_review"] = ""
     # Property detail columns (filled later via RentCast)
@@ -267,15 +268,18 @@ def calculate_equity(record: dict) -> dict:
     home_value = enrichment["estimated_home_value_num"]
     if home_value:
         equity = home_value - bal
+        pct = (equity / home_value * 100) if home_value > 0 else 0
         result["estimated_home_value"] = f"${home_value:,.2f}"
         result["estimated_equity"]     = f"${equity:,.2f}"
+        result["equity_pct"]           = f"{pct:.1f}%"
         result["equity_note"] = (
-            f"AVM=${home_value:,.0f} − balance=${bal:,.0f} = equity=${equity:,.0f}"
+            f"AVM=${home_value:,.0f} − balance=${bal:,.0f} = equity=${equity:,.0f} ({pct:.0f}%)"
         )
         equity_computed = True
     else:
         result["estimated_home_value"] = ""
         result["estimated_equity"]     = ""
+        result["equity_pct"]           = ""
         result["equity_note"] = (
             f"Balance after {elapsed}mo at {rate:.2f}% = ${bal:,.2f}. "
             f"AVM lookup failed — add home value manually to compute equity."

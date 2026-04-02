@@ -177,9 +177,9 @@ def _get_client():
 
 
 def _ensure_header(worksheet):
-    """Add header row and freeze it if the sheet is empty."""
+    """Add header row and freeze it if the sheet is empty or columns changed."""
     existing = worksheet.row_values(1)
-    if not existing or existing[0] != HEADER_ROW[0]:
+    if not existing or existing[0] != HEADER_ROW[0] or len(existing) != len(HEADER_ROW):
         cell_range = f"A1:{LAST_COL_LETTER}1"
         worksheet.update(cell_range, [HEADER_ROW])
         worksheet.format(cell_range, {
