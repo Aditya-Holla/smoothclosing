@@ -1,10 +1,10 @@
 name: Morning Lead Pipeline
 
 on:
-  schedule:
-    # Runs at 8 AM Central Time (14:00 UTC) every day
-    - cron: '0 14 * * *'
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+  # schedule:
+  #   # Runs at 8 AM Central Time (14:00 UTC) every day
+  #   - cron: '0 14 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI only
 
 permissions:
   contents: write
