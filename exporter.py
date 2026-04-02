@@ -20,6 +20,7 @@ CSV_COLUMNS = [
     "case_number",
     "loan_amount",
     "source_file",
+    "notes",
 ]
 
 

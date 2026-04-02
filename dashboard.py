@@ -123,7 +123,7 @@ with st.sidebar:
     st.header("Settings")
 
     st.markdown("**RentCast AVM**")
-    run_equity = st.toggle("Enrich with RentCast AVM", value=True)
+    run_equity = st.toggle("Enrich with RentCast AVM", value=False)
     rentcast_key = st.text_input("RentCast API Key", type="password",
                                  value=os.getenv("RENTCAST_API_KEY", ""),
                                  help="Overrides RENTCAST_API_KEY in .env")
@@ -303,6 +303,7 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
                                             "lender": "Travis County Tax",
                                             "loan_amount": str(row.get("Est. Min. Bid", "")),
                                             "source_file": tc.name,
+                                            "notes": "owner name not found" if not addr else "owner name not found",
                                         })
                             except Exception as e:
                                 logging.warning(f"Could not read Travis CSV {tc.name}: {e}")
@@ -345,15 +346,14 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
             # ====== STEP 3: Skip Trace (headless) ======
             if pipeline_ok:
                 records_to_trace = st.session_state.get("leads_records", [])
-                # Only trace leads with owner names AND valid addresses
+                # Only trace leads with valid addresses (owner name optional with address-first search)
                 records_to_trace = [
                     r for r in records_to_trace
-                    if str(r.get("owner_name", "")).strip()
-                    and str(r.get("property_address", "")).strip()
+                    if str(r.get("property_address", "")).strip()
                     and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
                 ]
                 if not records_to_trace:
-                    st.info("No new leads with owner names to trace. Everything is up to date.")
+                    st.info("No new leads with valid addresses to trace. Everything is up to date.")
                 else:
                     pipeline_status.info(f"**Step 3/3** — Skip tracing {len(records_to_trace)} lead(s) (headless)...")
                     step3_log = st.empty()
@@ -415,8 +415,8 @@ with st.expander("Run Full Pipeline (Download → Extract → Skip Trace)", expa
                     try:
                         from sheets_exporter import export_to_sheets
                         final_records = st.session_state.get("traced_records") or st.session_state.get("leads_records", [])
-                        # Only push leads with owner names (blank names are useless for calling)
-                        pushable = [r for r in final_records if r.get("owner_name", "").strip()]
+                        # Push all leads (address-first search can look up missing names)
+                        pushable = [r for r in final_records if r.get("owner_name", "").strip() or r.get("property_address", "").strip()]
                         if pushable:
                             count = export_to_sheets(pushable, sheet_id=sheet_id)
                             st.success(f"Pushed **{count}** lead(s) to Google Sheet.")
@@ -621,6 +621,7 @@ with tab1:
                                 "lender": "Travis County Tax",
                                 "loan_amount": str(row.get("Est. Min. Bid", "")),
                                 "source_file": tc.name,
+                                "notes": "owner name not found",
                             })
                 except Exception as e:
                     logging.warning(f"Could not read Travis CSV {tc.name}: {e}")
@@ -738,11 +739,10 @@ with tab2:
                 input_path = Path("leads_tmp_trace.csv")
                 output_path = Path("leads_traced.csv")
 
-                # Only trace leads with owner names AND valid addresses
+                # Only trace leads with valid addresses (owner name optional with address-first search)
                 traceable = [
                     r for r in records_to_trace
-                    if str(r.get("owner_name", "")).strip()
-                    and str(r.get("property_address", "")).strip()
+                    if str(r.get("property_address", "")).strip()
                     and str(r.get("property_address", "")).lower() not in ("", "nan", "none")
                 ]
                 if sg_limit > 0:
@@ -817,21 +817,31 @@ with tab3:
         total_nums = sum(len(_get_nums(r)) for r in sendable)
         st.write(f"**{len(sendable)}** leads with phone numbers — **{total_nums}** total numbers to text.")
 
-        # Message template editor
-        st.markdown("**Message Template**")
-        st.caption("Placeholders: `{owner_first}`, `{owner_name}`, `{property_address}`, `{sender_name}`")
-        template_text = st.text_area("Template", value=DEFAULT_TEMPLATE, height=120)
+        # Message templates — rotate randomly per lead
+        from ringcentral_sms import TEMPLATES, _extract_street, pick_template
+        st.markdown("**Message Templates** (one is picked randomly per lead)")
+        st.caption("Placeholder: `{street}` (auto-extracted from address)")
+        for idx, tmpl in enumerate(TEMPLATES, 1):
+            st.text(f"{idx}. {tmpl}")
+
+        use_custom = st.checkbox("Use a custom template instead", value=False)
+        custom_template = None
+        if use_custom:
+            st.caption("Placeholders: `{street}`, `{owner_first}`, `{owner_name}`, `{property_address}`, `{sender_name}`")
+            custom_template = st.text_area("Custom Template", value=TEMPLATES[0], height=120)
 
         # Preview
         if sendable:
-            preview_rec = sendable[0]
+            preview_rec = dict(sendable[0])
             preview_rec["sender_name"] = sender_name or "Your Name"
+            preview_rec["street"] = _extract_street(preview_rec.get("property_address", ""))
             name_parts = (preview_rec.get("owner_name") or "").split()
             preview_rec["owner_first"] = name_parts[0].title() if name_parts else ""
+            preview_tmpl = custom_template if use_custom else TEMPLATES[0]
             try:
-                preview_msg = template_text.format(**{k: (v or "") for k, v in preview_rec.items()})
+                preview_msg = preview_tmpl.format(**{k: (v or "") for k, v in preview_rec.items()})
             except KeyError:
-                preview_msg = template_text
+                preview_msg = preview_tmpl
             st.markdown(f"**Preview** (first lead):\n> {preview_msg}")
 
         dry_run = st.checkbox("Dry run (log only — don't actually send)", value=True)
@@ -875,13 +885,16 @@ with tab3:
                     name_parts = (owner or "").split()
                     rec["owner_first"] = name_parts[0].title() if name_parts else ""
                     rec["sender_name"] = sender_name or ""
+                    rec["street"] = _extract_street(rec.get("property_address", ""))
 
+                    active_tmpl = custom_template if use_custom else pick_template()
                     try:
-                        message = template_text.format(
+                        message = active_tmpl.format(
                             **{k: (v or "") for k, v in rec.items()}
                         )
                     except KeyError:
-                        message = template_text
+                        message = active_tmpl
+                    rec["sms_template"] = active_tmpl[:60] + "…"
 
                     all_nums = _get_nums(rec)
 

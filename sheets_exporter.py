@@ -37,6 +37,8 @@ HEADER_ROW = [
     "Owner Phone 3",
     "Owner Age",
     "Owner Deceased",
+    "Owner Current Address",
+    "Current Resident",
 ]
 
 # Per-relative columns (repeated for Rel 1–6)
@@ -53,6 +55,8 @@ for _i in range(1, 7):
     ])
 
 HEADER_ROW.extend([
+    "SMS Status",
+    "SMS Template",
     "Date Added",
     "Status",
     "Notes",
@@ -76,6 +80,8 @@ FIELD_MAP = [
     "phone_3",
     "poi_age",
     "poi_deceased",
+    "poi_current_address",
+    "current_resident",
 ]
 
 for _i in range(1, 7):
@@ -89,6 +95,12 @@ for _i in range(1, 7):
         f"rel_{_i}_same_address",
         f"rel_{_i}_deceased",
     ])
+
+# SMS outreach columns
+FIELD_MAP.extend([
+    "sms_status",
+    "sms_template",
+])
 # date_added is auto-filled
 # status + notes are left blank for coworker
 

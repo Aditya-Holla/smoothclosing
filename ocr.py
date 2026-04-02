@@ -7,6 +7,8 @@ pdf2image is kept as a whole-file fallback.
 """
 
 import logging
+import os
+import shutil
 from pathlib import Path
 
 import fitz
@@ -14,6 +16,34 @@ import pytesseract
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+# Auto-detect tesseract binary and tessdata for conda/homebrew installs
+_TESSERACT_SEARCH_PATHS = [
+    "/opt/anaconda3/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/opt/homebrew/bin/tesseract",
+]
+_TESSDATA_SEARCH_PATHS = [
+    "/opt/anaconda3/share/tessdata",
+    "/usr/local/share/tessdata",
+    "/opt/homebrew/share/tessdata",
+]
+
+# Set tesseract binary path if not already on PATH
+if not shutil.which("tesseract"):
+    for p in _TESSERACT_SEARCH_PATHS:
+        if os.path.isfile(p):
+            pytesseract.pytesseract.tesseract_cmd = p
+            logger.info(f"Tesseract found at {p}")
+            break
+
+# Set TESSDATA_PREFIX if not already set
+if not os.environ.get("TESSDATA_PREFIX"):
+    for p in _TESSDATA_SEARCH_PATHS:
+        if os.path.isdir(p) and os.path.isfile(os.path.join(p, "eng.traineddata")):
+            os.environ["TESSDATA_PREFIX"] = p
+            logger.info(f"TESSDATA_PREFIX set to {p}")
+            break
 
 # PSM 4 = single column of variable-size text (good for legal notices)
 TESSERACT_CONFIG = "--psm 4 --oem 3"

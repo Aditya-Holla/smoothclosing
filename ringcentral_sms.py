@@ -17,6 +17,8 @@ import argparse
 import csv
 import logging
 import os
+import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -83,6 +85,14 @@ def send_sms(access_token: str, from_number: str, to_number: str, text: str) -> 
 # Message template rendering
 # ---------------------------------------------------------------------------
 
+TEMPLATES = [
+    "Hey, I'm guessing you already have it handled but I wanted to reach out and see if anyone has taken the time to go over some ways to get the auction stopped on {street}?",
+    "Hey, quick question\u2014who would be the right person to talk to about {street}? I see the lender has set a sale date and wanted to understand the plan. \u2013 Vince",
+    "Hey, I noticed that the lender is giving you a hard time on {street}. I just wanted to reach out and see if you needed another option?",
+    "Hi, I may have some ideas to stop the auction on {street}. Would it be worth a quick conversation? \u2013 Vince",
+]
+
+# Legacy default kept for --template file override
 DEFAULT_TEMPLATE = (
     "Hi {owner_name}, my name is {sender_name} and I'm a real estate investor. "
     "I saw your property at {property_address} and I'm interested in making you "
@@ -91,10 +101,26 @@ DEFAULT_TEMPLATE = (
 )
 
 
+def _extract_street(address: str) -> str:
+    """Strip the street number from an address, returning just the street name.
+
+    '123 Main St, Austin, TX 78701' -> 'Main St'
+    '4500 N Lamar Blvd'             -> 'N Lamar Blvd'
+    """
+    if not address:
+        return "your property"
+    # Take only the first line / before any comma (drop city/state/zip)
+    street_line = address.split(",")[0].strip()
+    # Remove leading digits (house number)
+    street_name = re.sub(r"^\d+[-\d]*\s*", "", street_line).strip()
+    return street_name if street_name else "your property"
+
+
 def render_message(template: str, record: dict, sender_name: str) -> str:
     """Fill template placeholders from the lead record."""
     ctx = {k: (v or "") for k, v in record.items()}
     ctx["sender_name"] = sender_name
+    ctx["street"] = _extract_street(ctx.get("property_address", ""))
     # Trim owner name to first + last only
     name_parts = ctx.get("owner_name", "").split()
     ctx["owner_first"] = name_parts[0].title() if name_parts else ""
@@ -105,6 +131,11 @@ def render_message(template: str, record: dict, sender_name: str) -> str:
         return template
 
 
+def pick_template() -> str:
+    """Return a randomly chosen template from TEMPLATES."""
+    return random.choice(TEMPLATES)
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -112,8 +143,8 @@ def render_message(template: str, record: dict, sender_name: str) -> str:
 def run(
     input_csv: str,
     output_csv: str,
-    template: str,
-    sender_name: str,
+    template: str = None,
+    sender_name: str = "",
     dry_run: bool = False,
     delay_seconds: float = 1.5,
 ) -> None:
@@ -141,7 +172,10 @@ def run(
     for rec in records:
         owner   = rec.get("owner_name", "Unknown")
         address = rec.get("property_address", "")
-        message = render_message(template, rec, sender_name)
+        # Use rotating templates unless a custom template file was provided
+        active_template = pick_template() if template is None else template
+        message = render_message(active_template, rec, sender_name)
+        rec["sms_template"] = active_template[:60] + "…"
 
         # Collect all numbers from phone_1, phone_2, phone_3 (skip_genie_search output)
         all_numbers = [
@@ -227,10 +261,9 @@ def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    template_text = None
     if args.template:
         template_text = Path(args.template).read_text(encoding="utf-8").strip()
-    else:
-        template_text = DEFAULT_TEMPLATE
 
     run(
         input_csv=args.input,

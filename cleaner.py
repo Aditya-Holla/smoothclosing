@@ -19,7 +19,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-CRITICAL_FIELDS = ("owner_name",)
 
 TEXAS_STATE_ABBREVS = re.compile(r"\bTEXAS\b", re.IGNORECASE)
 
@@ -31,10 +30,11 @@ _BAD_NAME_PHRASES = re.compile(
     r'collection\s+of\s+this|notice\s+(?:of|is)|foreclosure|'
     r'obligations?\s+secured|now\s+(?:therefore|has\s+in)|'
     r'pursuant\s+to|mortgage\s+servi|in\s+(?:accordance|connection)|'
-    r'property\s+(?:code|to\s+be)|instrument\s+to|'
+    r'property\s+(?:code|to\s+be|shall\s+be)|instrument\s+to|'
     r'assert\s+and\s+protect|armed\s+forces|military\s+duty|'
     r'substitute\s+trustee|appointment\s+of|'
-    r'bell\s+county|hays\s+county|travis\s+county|williamson\s+county'
+    r'bell\s+county|hays\s+county|travis\s+county|williamson\s+county|'
+    r'described\s+above|offered\s+for|in\s+the\s+deed'
     r')\b',
     re.IGNORECASE,
 )
@@ -115,8 +115,22 @@ def _normalize_name(name: Optional[str]) -> str:
     return name.title()
 
 
+_LLC_PATTERN = re.compile(
+    r'\b(?:LLC|L\.L\.C|Inc\.?|Corp\.?|Ltd\.?|Holdings|Investments|Properties|'
+    r'Ventures|Enterprises|Trust|Foundation|Association)\b',
+    re.IGNORECASE,
+)
+
+
+def _is_llc(name: str) -> bool:
+    """Return True if the name is an LLC/Corp/entity — these get deleted entirely."""
+    if not name:
+        return False
+    return bool(_LLC_PATTERN.search(name))
+
+
 def _validate_name(name: str) -> bool:
-    """Return True if the name looks like a real person/entity name, not boilerplate."""
+    """Return True if the name looks like a real person name, not boilerplate."""
     if not name:
         return False
     # Reject names containing legal boilerplate phrases
@@ -125,12 +139,9 @@ def _validate_name(name: str) -> bool:
     # Reject known lender/servicer names captured as owner
     if _LENDER_AS_OWNER.match(name):
         return False
-    # Reject LLC/Corp/Inc entities — we only want individual homeowners
-    if re.search(r'\b(?:LLC|L\.L\.C|Inc\.?|Corp\.?|Ltd\.?|Holdings|Investments|Properties|Ventures|Enterprises|Trust|Foundation|Association)\b', name, re.IGNORECASE):
-        return False
-    # Reject names that are too short (single short word, not an LLC/Corp/Inc)
+    # Reject names that are too short (single short word)
     words = name.split()
-    if len(words) == 1 and len(name) < 5 and not re.search(r'(?:llc|inc|corp|ltd)\b', name, re.IGNORECASE):
+    if len(words) == 1 and len(name) < 5:
         return False
     # Reject names that are mostly non-alpha (OCR garbage)
     alpha_chars = sum(1 for c in name if c.isalpha())
@@ -230,21 +241,29 @@ def clean_record(record: dict) -> Optional[dict]:
         "source_file":      _clean_str(record.get("source_file")),
     }
 
-    for field in CRITICAL_FIELDS:
-        if not cleaned[field]:
-            logger.warning(
-                f"  Cleaner: skipping record — missing '{field}' "
-                f"(source: {cleaned['source_file']})"
-            )
-            return None
-
-    # Validate owner name is not boilerplate/garbage
-    if not _validate_name(cleaned["owner_name"]):
-        logger.warning(
-            f"  Cleaner: rejecting bad owner name '{cleaned['owner_name']}' "
+    # LLC/entity → delete entire row
+    if _is_llc(cleaned["owner_name"]):
+        logger.info(
+            f"  Cleaner: removing LLC/entity '{cleaned['owner_name']}' "
             f"(source: {cleaned['source_file']})"
         )
         return None
+
+    # Boilerplate/garbage name → clear it but keep the row
+    if cleaned["owner_name"] and not _validate_name(cleaned["owner_name"]):
+        logger.info(
+            f"  Cleaner: clearing bad owner name '{cleaned['owner_name']}' "
+            f"(source: {cleaned['source_file']})"
+        )
+        cleaned["owner_name"] = ""
+
+    # Set notes about what's missing
+    missing = []
+    if not cleaned["owner_name"]:
+        missing.append("owner name not found")
+    if not cleaned["property_address"]:
+        missing.append("property address not found")
+    cleaned["notes"] = "; ".join(missing) if missing else ""
 
     return cleaned
 

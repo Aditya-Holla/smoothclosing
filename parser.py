@@ -106,12 +106,12 @@ OWNER_PATTERNS = [
     r"Trustor\(?s?\)?[:\s]+([A-Z][A-Z\s,&.'-]{3,80}?)(?=[\s_]+(?:Original|Curent|Current|Beneficiary)|\n\n|\nLoan|\nProperty)",
     # Format C: "The Deed of Trust executed by CODY LYNN DODSON AND ROSARIO ESQUIVEL secures"
     # Also handles OCR typo "sccures", AVT "provides", "Deed of Trust or Contract Lien",
-    # and garbled OCR like "? res" (for "secures")
-    r"(?:Deed\s+of\s+Trust(?:\s+or\s+Contract\s+Lien)?|Contract\s+Lien)\s+executed\s+by\s+©?\s*([A-Z][A-Za-z\s,&=.'-]{3,100}?)(?=,?\s*(?:provides|secures|sccures|securing|\?\s*r?es\b))",
+    # garbled OCR like "? res" (for "secures"), and A/K/A names
+    r"(?:Deed\s+of\s+Trust(?:\s+or\s+Contract\s+Lien)?|Contract\s+Lien)\s+executed\s+by\s+©?\s*([A-Z][A-Za-z\s,&=./'-]{3,100}?)(?=,?\s*(?:provides|secures|sccures|securing|\?\s*r?es\b))",
     # Obligation Secured format: "Obligation Secured: The Deed of Trust executed by NAME secures/secure"
-    r"Obligation\s+Secured[^.]{0,40}executed\s+by\s+([A-Z][A-Za-z\s&.,'-]{4,80}?)(?=\s+secures?\b|\s+provides?\b|\n|\s{2,})",
+    r"Obligation\s+Secured[^.]{0,40}executed\s+by\s+([A-Z][A-Za-z\s&.,/'-]{4,80}?)(?=\s+secures?\b|\s+provides?\b|\n|\s{2,})",
     # Fournier / generic: "executed by NAME and recorded" or "executed by NAME, husband..."
-    r"executed\s+by\s+([A-Z][A-Z\s&.'-]{4,80}?)(?=\s+and\s+recorded|\s*,\s*(?:husband|wife|securing|provides|\$))",
+    r"executed\s+by\s+([A-Z][A-Z\s&./'-]{4,80}?)(?=\s+and\s+recorded|\s*,\s*(?:husband|wife|securing|provides|\$))",
     # Format K: "a deed to Patrick Ryan Nelson and Jessica Nelson, as recorded"
     # Used in legal descriptions of rural/acreage properties (Burnet County etc.)
     # Require uppercase start to avoid matching lowercase legal description phrases
@@ -122,9 +122,10 @@ OWNER_PATTERNS = [
     # like "with the existing fence line" from property metes-and-bounds descriptions
     r"with\s+([A-Z][A-Za-z\s.'-]{2,60}?)(?=,|\s+as\s+Grantor)",
     # Format B: "JAVIER DELGADILLO {AND ELISSA M ANZURES, HUSBAND AND WIFE, grantor(s)"
-    r"(?:with|by)\s+([A-Z][A-Z\s,{}&.'-]{5,100}?),?\s*(?:HUSBAND\s+AND\s+WIFE\s*,\s*)?grantor\(?s?\)?",
+    # Includes / for A/K/A names (e.g. "VERA C. JENNINGS A/K/A VERA JENNINGS")
+    r"(?:with|by)\s+([A-Z][A-Z\s,{}&./'-]{5,100}?),?\s*(?:HUSBAND\s+AND\s+WIFE\s*,\s*)?grantor\(?s?\)?",
     # Format B section 4 / May batch: "Lien executed by NAME HUSBAND AND WIFE, securing"
-    r"(?:Trust|Lien)\s+executed\s+by\s+([A-Z][A-Za-z\s,=.'-]{5,100}?)(?=,?\s*(?:HUSBAND\s+AND\s+WIFE,?\s+securing|securing|HUSBAND\s+AND\s+WIFE))",
+    r"(?:Trust|Lien)\s+executed\s+by\s+([A-Z][A-Za-z\s,=./'-]{5,100}?)(?=,?\s*(?:HUSBAND\s+AND\s+WIFE,?\s+securing|securing|HUSBAND\s+AND\s+WIFE))",
     # Generic labeled fallback
     r"(?:Grantor|Borrower|Obligor)[:/\s]+([A-Z][A-Za-z\s.'-]{2,60}?)(?=\n|,\s*(?:a |an |as ))",
 ]
@@ -340,6 +341,33 @@ def _extract_address(block: str) -> Optional[str]:
 # Splitter
 # ---------------------------------------------------------------------------
 
+# Compiled once — used by _split_into_notices and _is_foreclosure_notice
+_NOTICE_HEADER = re.compile(
+    r"^[ \t]*(?:NOTICE\s+OF\s+(?:SUBSTITUTE\s+)?TRUSTEE(?:'S)?\s+SALE\b"
+    r"|SUBSTITUTE\s+TRUSTEE(?:'S)?\s+SALE\b"
+    r"|NOTICE\s+OF\s+FORECLOSURE\s+SALE\b(?:\s+AND\s+APPOINTMENT\s+OF\s+SUBSTITUTE\s+TRUSTEE)?"
+    r"|DEED\s+OF\s+TRUST\s+SALE\b)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Secondary signals that confirm a document is foreclosure-related even without
+# a clean header match (e.g. OCR garbled the header but body is clearly a notice)
+_FORECLOSURE_SIGNALS = re.compile(
+    r"(?:Grantor|Borrower|Mortgagor|Trustor|deed\s+of\s+trust|foreclosure\s+sale"
+    r"|substitute\s+trustee|executed\s+by|WHEREAS,\s+on)",
+    re.IGNORECASE,
+)
+
+
+def _is_foreclosure_notice(text: str) -> bool:
+    """Return True if the text looks like a foreclosure notice, not an unrelated document."""
+    if _NOTICE_HEADER.search(text):
+        return True
+    # Require at least 2 secondary signals to accept a headerless document
+    matches = _FORECLOSURE_SIGNALS.findall(text)
+    return len(matches) >= 2
+
+
 def _split_into_notices(text: str) -> list[str]:
     """
     Split a document into individual notice blocks.
@@ -351,15 +379,7 @@ def _split_into_notices(text: str) -> list[str]:
     # ^ with re.MULTILINE requires the header to be at the START of a line.
     # This prevents matching "posted this Notice of Foreclosure Sale" in boilerplate
     # where "Notice" is in the middle of a sentence.
-    splitter = re.compile(
-        r"^[ \t]*(?:NOTICE\s+OF\s+(?:SUBSTITUTE\s+)?TRUSTEE(?:'S)?\s+SALE"
-        r"|SUBSTITUTE\s+TRUSTEE(?:'S)?\s+SALE"
-        r"|NOTICE\s+OF\s+FORECLOSURE\s+SALE(?:\s+AND\s+APPOINTMENT\s+OF\s+SUBSTITUTE\s+TRUSTEE)?"
-        r"|DEED\s+OF\s+TRUST\s+SALE)",
-        re.IGNORECASE | re.MULTILINE,
-    )
-
-    matches = list(splitter.finditer(text))
+    matches = list(_NOTICE_HEADER.finditer(text))
     if not matches:
         return [text]
 
@@ -386,7 +406,12 @@ def parse_notice(text: str, source_file: str) -> list[dict]:
     """
     Parse raw text from a Texas foreclosure notice PDF.
     Returns a list of raw (uncleaned) record dicts.
+    Automatically skips non-foreclosure documents (admin PDFs, fee schedules, etc.).
     """
+    if not _is_foreclosure_notice(text):
+        logger.info(f"  Parser: skipping '{source_file}' — not a foreclosure notice")
+        return []
+
     blocks = _split_into_notices(text)
     logger.info(f"  Parser: found {len(blocks)} notice block(s) in '{source_file}'")
 
