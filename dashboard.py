@@ -73,7 +73,79 @@ def count_csv_rows(path: str) -> int:
 
 st.title("🏠 SmoothClosing")
 
-tab_acq, tab_dispo = st.tabs(["Acquisitions", "Dispositions"])
+tab_chat, tab_acq, tab_dispo = st.tabs(["Chat", "Acquisitions", "Dispositions"])
+
+# ===========================================================================
+# CHAT TAB — Talk to the orchestrator
+# ===========================================================================
+
+with tab_chat:
+    st.header("Ask the Assistant")
+    st.caption(
+        "Talk to the SmoothClosing assistant. It can run the pipeline, "
+        "skip trace leads, look up properties on CAD, trace buyers, and more."
+    )
+
+    # Initialize chat history
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+
+    # Display chat history
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Chat input
+    if prompt := st.chat_input("e.g. 'who owns 503 Pintail Ln in Williamson county?'"):
+        # Add user message
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Run the orchestrator
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                try:
+                    result = subprocess.run(
+                        [PYTHON, "-c", f"""
+import asyncio
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, AssistantMessage, TextBlock
+from agents.orchestrator import build_options
+
+async def main():
+    opts = build_options()
+    result_text = ""
+    async for message in query(prompt={prompt!r}, options=opts):
+        if isinstance(message, ResultMessage):
+            if message.result:
+                result_text = message.result
+        elif isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    result_text = block.text
+    print(result_text)
+
+asyncio.run(main())
+"""],
+                        capture_output=True, text=True,
+                        cwd=str(Path(__file__).parent),
+                        timeout=300,
+                    )
+                    response = result.stdout.strip()
+                    if not response and result.stderr:
+                        # Check for errors
+                        error_lines = [l for l in result.stderr.split('\n') if 'Error' in l or 'error' in l]
+                        response = "Sorry, something went wrong. " + (error_lines[-1] if error_lines else "Check the logs.")
+                    if not response:
+                        response = "No response from the assistant."
+                except subprocess.TimeoutExpired:
+                    response = "Request timed out (5 min limit). Try a simpler question."
+                except Exception as e:
+                    response = f"Error: {e}"
+
+            st.markdown(response)
+            st.session_state.chat_messages.append({"role": "assistant", "content": response})
+
 
 # ===========================================================================
 # ACQUISITIONS TAB

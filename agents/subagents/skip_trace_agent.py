@@ -68,4 +68,5 @@ how many Sheet3 rows have empty Phones
 - For foreclosure leads with addresses, use Mode 1 (skipgenie.py)
 """,
     tools=["Bash", "Read", "Write"],
+    permissionMode="acceptEdits",
 )

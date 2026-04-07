@@ -58,4 +58,5 @@ When asked to "run the pipeline" or "process new leads":
 - Use Glob to check what PDFs exist in input_pdfs/
 """,
     tools=["Bash", "Read", "Glob"],
+    permissionMode="acceptEdits",
 )

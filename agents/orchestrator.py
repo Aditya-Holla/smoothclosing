@@ -6,6 +6,7 @@ from agents.subagents.pdf_agent import PDF_AGENT
 from agents.subagents.skip_trace_agent import SKIP_TRACE_AGENT
 from agents.subagents.sms_agent import SMS_AGENT
 from agents.subagents.sheets_agent import SHEETS_AGENT
+from agents.subagents.cad_agent import CAD_AGENT
 
 SYSTEM_PROMPT = """\
 You are the SmoothClosing acquisitions assistant. You help a small Texas \
@@ -29,6 +30,12 @@ numbers", "trace the leads", "look up this buyer".
 
 4. **sheets-agent** — Pushes leads to Google Sheets and reads existing data. \
 Use for: "push to sheets", "update the spreadsheet", "check if already contacted".
+
+5. **cad-agent** — Searches county appraisal district websites for property \
+ownership, deed history, property specs (sqft, lot size, year built), and \
+values. Use for: "who owns this property", "look up deed history", "find \
+flippers near this address", "search CAD for [name/address]". Supports \
+Williamson, Hays, and Bastrop counties.
 
 ## Workflow Rules
 
@@ -56,6 +63,11 @@ Sheet with a "Call Status" entry
 - The agent will write the names to leads.csv and run the name search
 - Chain to sms-agent if user wants to text them
 
+### Property research ("who owns this", "deed history", "find flippers"):
+- Delegate to cad-agent: search by address or owner name
+- For "find flippers near [address]": cad-agent searches the area, looks at \
+deed history for recent buyers, then pass those buyer names to skip-trace-agent
+
 ## Communication Style
 - Be concise and action-oriented
 - Report clear numbers: X PDFs processed, Y leads found, Z texts sent
@@ -75,12 +87,14 @@ def build_options(resume_session_id: str = None) -> ClaudeAgentOptions:
         allowed_tools=["Agent", "Read", "Glob"],
         system_prompt=SYSTEM_PROMPT,
         model="claude-sonnet-4-6",
+        permission_mode="acceptEdits",
         max_turns=50,
         agents={
             "pdf-agent": PDF_AGENT,
             "skip-trace-agent": SKIP_TRACE_AGENT,
             "sms-agent": SMS_AGENT,
             "sheets-agent": SHEETS_AGENT,
+            "cad-agent": CAD_AGENT,
         },
     )
     if resume_session_id:

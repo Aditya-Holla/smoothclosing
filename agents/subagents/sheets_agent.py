@@ -65,4 +65,5 @@ print(f'Found {len(matches)} matches')
 - GOOGLE_SHEET_ID env var must be set
 """,
     tools=["Bash", "Read"],
+    permissionMode="acceptEdits",
 )
