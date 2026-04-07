@@ -35,7 +35,7 @@ Use for: "push to sheets", "update the spreadsheet", "check if already contacted
 ownership, deed history, property specs (sqft, lot size, year built), and \
 values. Use for: "who owns this property", "look up deed history", "find \
 flippers near this address", "search CAD for [name/address]". Supports \
-Williamson, Hays, and Bastrop counties.
+6 counties: Williamson, Hays, Bastrop, Bell, Burnet, and Travis.
 
 ## Workflow Rules
 

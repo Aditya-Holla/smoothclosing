@@ -39,6 +39,9 @@ COUNTIES = {
     "williamson": {"name": "Williamson County (WCAD)", "method": "api"},
     "hays":       {"name": "Hays County (Hays CAD)", "method": "playwright"},
     "bastrop":    {"name": "Bastrop County (Bastrop CAD)", "method": "playwright"},
+    "bell":       {"name": "Bell County (Bell CAD)", "method": "playwright"},
+    "burnet":     {"name": "Burnet County (Burnet CAD)", "method": "playwright"},
+    "travis":     {"name": "Travis County (TCAD)", "method": "playwright"},
 }
 
 OUTPUT_COLUMNS = [
@@ -195,7 +198,7 @@ def get_wcad_detail(prop_id: str) -> dict:
     return detail
 
 
-# ── BIS Platform (Hays, Bastrop) via Playwright ───────────────────
+# ── BIS Platform (Hays, Bastrop, Bell, Burnet) via Playwright ──────
 
 def search_bis(county: str, query: str, search_type: str = "owner") -> list[dict]:
     """Search a BIS-platform CAD via Playwright browser automation."""
@@ -204,6 +207,8 @@ def search_bis(county: str, query: str, search_type: str = "owner") -> list[dict
     base_urls = {
         "hays": "https://esearch.hayscad.com",
         "bastrop": "https://esearch.bastropcad.org",
+        "bell": "https://esearch.bellcad.org",
+        "burnet": "https://esearch.burnet-cad.org",
     }
 
     base_url = base_urls.get(county)
@@ -338,6 +343,149 @@ def _get_bis_detail(page, base_url: str, property_id: str) -> dict:
     return detail
 
 
+# ── Travis CAD (Prodigy platform) via Playwright ──────────────────
+
+def search_travis(query: str, search_type: str = "owner") -> list[dict]:
+    """Search Travis CAD via Playwright (Prodigy CAD platform)."""
+    from playwright.sync_api import sync_playwright
+
+    results = []
+
+    with sync_playwright() as p:
+        context = p.chromium.launch_persistent_context(
+            SESSION_DIR,
+            headless=True,
+            viewport={"width": 1280, "height": 900},
+            ignore_https_errors=True,
+        )
+        page = context.pages[0] if context.pages else context.new_page()
+
+        try:
+            page.goto("https://stage.travis.prodigycad.com/property-search",
+                      timeout=30000, wait_until="networkidle")
+            time.sleep(3)
+
+            # Find and fill the search input
+            search_input = page.locator(
+                "input[placeholder*='property'], input[placeholder*='search'], "
+                "input[placeholder*='Enter'], input[type='search'], input[type='text']"
+            ).first
+
+            search_input.click()
+            search_input.fill(query)
+            time.sleep(1)
+
+            # Press Enter or click search button
+            try:
+                search_btn = page.locator(
+                    "button:has-text('Search'), button[type='submit'], "
+                    "button:has-text('search'), [aria-label='Search']"
+                ).first
+                if search_btn.is_visible(timeout=2000):
+                    search_btn.click()
+                else:
+                    search_input.press("Enter")
+            except Exception:
+                search_input.press("Enter")
+
+            time.sleep(5)
+
+            # Scrape results
+            body_text = page.inner_text("body")
+
+            # Look for property rows in results
+            # Prodigy typically shows: Property ID | Owner | Address | Value
+            lines = [l.strip() for l in body_text.split('\n') if l.strip()]
+
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                # Look for property ID patterns (Travis uses R + digits)
+                if re.match(r'^R?\d{5,}', line):
+                    result = {
+                        "county": "Travis",
+                        "property_id": line,
+                        "owner_name": "",
+                        "property_address": "",
+                        "mailing_address": "",
+                        "market_value": "",
+                        "assessed_value": "",
+                        "year_built": "",
+                        "sqft": "",
+                        "lot_size": "",
+                        "bedrooms": "",
+                        "legal_description": "",
+                        "deed_history": "",
+                    }
+
+                    # Next lines usually have owner and address
+                    for j in range(1, 5):
+                        if i + j >= len(lines):
+                            break
+                        next_line = lines[i + j]
+                        if '$' in next_line:
+                            result["market_value"] = next_line
+                        elif re.match(r'^\d+\s+[A-Z]', next_line) and not result["property_address"]:
+                            result["property_address"] = next_line
+                        elif next_line and not result["owner_name"] and not next_line.startswith('R'):
+                            result["owner_name"] = next_line
+
+                    if result["owner_name"] or result["property_address"]:
+                        # Filter by search type
+                        if search_type == "owner" and query.lower() in result["owner_name"].lower():
+                            results.append(result)
+                        elif search_type == "address" and query.lower() in result["property_address"].lower():
+                            results.append(result)
+                        elif search_type not in ("owner", "address"):
+                            results.append(result)
+                    i += 5
+                else:
+                    i += 1
+
+            # If no structured results, try clicking on first result link
+            if not results:
+                links = page.locator("a[href*='property'], a[href*='detail'], tr[class*='result']").all()
+                for link in links[:5]:
+                    try:
+                        text = link.inner_text(timeout=1000)
+                        if query.lower() in text.lower():
+                            result = {
+                                "county": "Travis",
+                                "property_id": "",
+                                "owner_name": "",
+                                "property_address": "",
+                                "mailing_address": "",
+                                "market_value": "",
+                                "assessed_value": "",
+                                "year_built": "",
+                                "sqft": "",
+                                "lot_size": "",
+                                "bedrooms": "",
+                                "legal_description": "",
+                                "deed_history": "",
+                            }
+                            parts = [p.strip() for p in text.split('\n') if p.strip()]
+                            for part in parts:
+                                if re.match(r'^\d+\s+[A-Z]', part) and not result["property_address"]:
+                                    result["property_address"] = part
+                                elif '$' in part:
+                                    result["market_value"] = part
+                                elif part and not result["owner_name"]:
+                                    result["owner_name"] = part
+                            if result["owner_name"] or result["property_address"]:
+                                results.append(result)
+                    except Exception:
+                        continue
+
+        except Exception as e:
+            logger.error("Travis CAD search failed: %s", e)
+        finally:
+            context.close()
+
+    logger.info("Travis CAD: found %d result(s) for %r", len(results), query)
+    return results
+
+
 # ── Unified Search ─────────────────────────────────────────────────
 
 def search_cad(county: str, query: str, search_type: str = "owner") -> list[dict]:
@@ -349,6 +497,8 @@ def search_cad(county: str, query: str, search_type: str = "owner") -> list[dict
     method = COUNTIES[county]["method"]
     if method == "api":
         return search_wcad(query, search_type)
+    elif county == "travis":
+        return search_travis(query, search_type)
     elif method == "playwright":
         return search_bis(county, query, search_type)
     return []

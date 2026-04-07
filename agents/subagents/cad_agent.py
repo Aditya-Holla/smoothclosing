@@ -7,8 +7,8 @@ CAD_AGENT = AgentDefinition(
         "Searches Texas County Appraisal District (CAD) websites for property "
         "ownership, deed history, property specs, and values. Use for: who owns "
         "a property, deed transfer history, finding flippers who bought nearby, "
-        "property details (sqft, lot size, year built). Supports Williamson, "
-        "Hays, and Bastrop counties."
+        "property details (sqft, lot size, year built). Supports 6 Texas "
+        "counties: Williamson, Hays, Bastrop, Bell, Burnet, and Travis."
     ),
     prompt="""\
 You are the CAD (County Appraisal District) agent for SmoothClosing. You \
@@ -69,8 +69,11 @@ Shows every property that LLC owns across all supported counties.
 
 ## County Details
 - **Williamson (WCAD)**: JSON API — fast, includes deed history + property specs
-- **Hays**: Playwright browser — slower but works
-- **Bastrop**: Playwright browser — slower but works
+- **Hays**: Playwright browser (BIS platform)
+- **Bastrop**: Playwright browser (BIS platform)
+- **Bell**: Playwright browser (BIS platform, has reCAPTCHA)
+- **Burnet**: Playwright browser (BIS platform, has reCAPTCHA)
+- **Travis (TCAD)**: Playwright browser (Prodigy CAD platform)
 
 ## Important Notes
 - After finding owners/buyers, pass names to the skip-trace-agent for phones
