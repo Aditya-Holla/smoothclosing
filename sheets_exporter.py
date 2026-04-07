@@ -8,8 +8,7 @@ The sheet is the coworker's daily working document:
   - Pipeline NEVER touches status/notes columns — those belong to the caller
   - Rows never move or get deleted
 
-Columns include the full enriched data: equity estimates, phone numbers,
-relative contacts, and SMS status from the complete pipeline.
+Column layout matches the Austin Foreclosure Spreadsheet format (18 columns).
 """
 
 import logging
@@ -19,92 +18,120 @@ from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
-# The columns that get pushed to the sheet — enriched data + coworker columns
+# Column layout matching the Austin Foreclosure Spreadsheet format
 HEADER_ROW = [
-    "Owner Name",
+    "Date Posted",
+    "Name",
     "Property Address",
+    "Property City",
+    "Property State",
+    "Property Zip",
     "Mailing Address",
-    "County",
-    "Filing Date",
-    "Sale Date",
     "Lender",
+    "Attorney",
+    "Active",
+    "In Crm",
+    "Loan Secured",
     "Loan Amount",
-    "Estimated Home Value",
+    "Estimated Value",
     "Estimated Equity",
     "Equity Note",
-    "Owner Phone 1",
-    "Owner Phone 2",
-    "Owner Phone 3",
-    "Owner Age",
-    "Owner Deceased",
-    "Owner Current Address",
-    "Current Resident",
+    "Remarks",
+    "Name",
+    "Phone Number",
+    "Relationship",
+    "Call Status",
 ]
-
-# Per-relative columns (repeated for Rel 1–6)
-for _i in range(1, 7):
-    HEADER_ROW.extend([
-        f"Rel {_i} Name",
-        f"Rel {_i} Relationship",
-        f"Rel {_i} Phone 1",
-        f"Rel {_i} Phone 2",
-        f"Rel {_i} Phone 3",
-        f"Rel {_i} Address",
-        f"Rel {_i} Same Addr?",
-        f"Rel {_i} Deceased",
-    ])
-
-HEADER_ROW.extend([
-    "SMS Status",
-    "SMS Template",
-    "Date Added",
-    "Status",
-    "Notes",
-])
-
-# Maps from CSV column names → row position
-FIELD_MAP = [
-    "owner_name",
-    "property_address",
-    "mailing_address",
-    "rc_county",
-    "filing_date",
-    "sale_date",
-    "lender",
-    "loan_amount",
-    "estimated_home_value",
-    "estimated_equity",
-    "equity_note",
-    "phone_1",
-    "phone_2",
-    "phone_3",
-    "poi_age",
-    "poi_deceased",
-    "poi_current_address",
-    "current_resident",
-]
-
-for _i in range(1, 7):
-    FIELD_MAP.extend([
-        f"rel_{_i}_name",
-        f"rel_{_i}_relationship",
-        f"rel_{_i}_phone_1",
-        f"rel_{_i}_phone_2",
-        f"rel_{_i}_phone_3",
-        f"rel_{_i}_address",
-        f"rel_{_i}_same_address",
-        f"rel_{_i}_deceased",
-    ])
-
-# SMS outreach columns
-FIELD_MAP.extend([
-    "sms_status",
-    "sms_template",
-])
-# date_added is auto-filled
-# status + notes are left blank for coworker
 
 NUM_COLS = len(HEADER_ROW)
+
+
+def _parse_address(addr: str) -> tuple[str, str, str, str]:
+    """Split '3814 TWILIGHT DR, TEMPLE, TX 76502' into (street, city, state, zip)."""
+    addr = addr.strip()
+    if not addr:
+        return ("", "", "", "")
+
+    # Normalize periods to commas (e.g. "TEMPLE. TX 76504")
+    addr = addr.replace(". ", ", ").replace(".,", ",")
+
+    # Normalize full state names to abbreviations (e.g. "Texas" → "TX")
+    _STATE_MAP = {
+        "texas": "TX", "california": "CA", "florida": "FL", "georgia": "GA",
+        "new york": "NY", "oklahoma": "OK", "louisiana": "LA", "arkansas": "AR",
+        "arizona": "AZ", "colorado": "CO", "tennessee": "TN", "alabama": "AL",
+        "mississippi": "MS", "missouri": "MO", "ohio": "OH", "virginia": "VA",
+    }
+    for full, abbr in _STATE_MAP.items():
+        # Match ", Texas 78640" or ", Texas"
+        addr = re.sub(rf',\s*{full}\s', f', {abbr} ', addr, flags=re.IGNORECASE)
+        addr = re.sub(rf',\s*{full}$', f', {abbr}', addr, flags=re.IGNORECASE)
+
+    # Try pattern: STREET, CITY, ST ZIP
+    m = re.match(
+        r'^(.+?),\s*(.+?),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$', addr
+    )
+    if m:
+        return (m.group(1).strip(), m.group(2).strip(), m.group(3).upper(), m.group(4))
+
+    # Try pattern: STREET, CITY, ST (no zip)
+    m = re.match(r'^(.+?),\s*(.+?),\s*([A-Za-z]{2})\.?$', addr)
+    if m:
+        return (m.group(1).strip(), m.group(2).strip(), m.group(3).upper(), "")
+
+    # No comma between street and city — try known multi-word TX cities first,
+    # then fall back to single-word city before ", ST ZIP"
+    _MULTI_WORD_CITIES = [
+        "GRANITE SHOALS", "HARKER HEIGHTS", "LAGO VISTA", "LIBERTY HILL",
+        "SAN ANTONIO", "SAN MARCOS", "BELL COUNTY", "COTTONWOOD SHORES",
+        "CEDAR PARK", "ROUND ROCK", "PFLUGERVILLE", "DRIPPING SPRINGS",
+    ]
+    addr_upper = addr.upper()
+    for city in _MULTI_WORD_CITIES:
+        idx = addr_upper.rfind(city)
+        if idx > 0:
+            rest = addr[idx + len(city):].strip().lstrip(",").strip()
+            m_rest = re.match(r'([A-Za-z]{2})\s*(\d{5}(?:-\d{4})?)?\.?\s*$', rest)
+            if m_rest:
+                return (addr[:idx].strip().rstrip(","), city, m_rest.group(1).upper(), m_rest.group(2) or "")
+
+    # Single-word city: greedy street, 1 word before ", ST ZIP"
+    m = re.match(r'^(.+)\s+(\S+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$', addr)
+    if m:
+        return (m.group(1).strip(), m.group(2).strip(), m.group(3).upper(), m.group(4))
+
+    # Single-word city, no zip
+    m = re.match(r'^(.+)\s+(\S+),\s*([A-Za-z]{2})\.?\s*$', addr)
+    if m:
+        return (m.group(1).strip(), m.group(2).strip(), m.group(3).upper(), "")
+
+    # Fallback: entire string as street
+    return (addr, "", "", "")
+
+
+def _clean_val(val) -> str:
+    """Clean a value: strip whitespace and convert nan/None to empty string."""
+    val = str(val).strip() if val is not None else ""
+    return "" if val.lower() == "nan" else val
+
+
+def _format_dollar(val) -> str:
+    """Ensure dollar amounts have $ prefix."""
+    val = _clean_val(val)
+    if val and val[0].isdigit():
+        val = "$" + val
+    return val
+
+
+def _clean_phone(val: str) -> str:
+    """Clean phone: strip .0 from float format, remove nan."""
+    val = str(val).strip()
+    if not val or val.lower() == "nan":
+        return ""
+    # Strip trailing .0 from pandas float format
+    if val.endswith(".0"):
+        val = val[:-2]
+    return val
 
 
 def _col_letter(n: int) -> str:
@@ -176,6 +203,26 @@ def _get_client():
     )
 
 
+ACTIVE_OPTIONS = [
+    "Canceled",
+    "Active",
+    "No Info Given",
+    "Unable To Reach",
+]
+
+IN_CRM_OPTIONS = [
+    "In Crm",
+]
+
+CALL_STATUS_OPTIONS = [
+    "Correct Number, CM",
+    "Correct Number, NCM",
+    "Wrong Number",
+    "NCM",
+    "Non-working number",
+]
+
+
 def _ensure_header(worksheet):
     """Add header row and freeze it if the sheet is empty or columns changed."""
     existing = worksheet.row_values(1)
@@ -191,9 +238,9 @@ def _ensure_header(worksheet):
 
 
 def _get_existing_keys(worksheet) -> set[tuple]:
-    """Read columns A and B to get all existing (owner_name, property_address) keys."""
-    names = worksheet.col_values(1)[1:]     # column A
-    addresses = worksheet.col_values(2)[1:]  # column B
+    """Read Name (col B) and Property Address (col C) for dedup keys."""
+    names = worksheet.col_values(2)[1:]      # column B = Name
+    addresses = worksheet.col_values(3)[1:]  # column C = Property Address
 
     keys = set()
     for i in range(max(len(names), len(addresses))):
@@ -212,6 +259,38 @@ def _highlight_rows(worksheet, start_row: int, end_row: int):
     worksheet.format(cell_range, {
         "backgroundColor": {"red": 1.0, "green": 0.98, "blue": 0.8},
     })
+
+
+def _add_dropdowns(worksheet, start_row: int, end_row: int):
+    """Add data validation dropdowns for Active, In Crm, and Call Status columns."""
+    dropdowns = [
+        ("Active", ACTIVE_OPTIONS),
+        ("In Crm", IN_CRM_OPTIONS),
+        ("Call Status", CALL_STATUS_OPTIONS),
+    ]
+    requests = []
+    for col_name, options in dropdowns:
+        col_idx = HEADER_ROW.index(col_name) + 1
+        requests.append({
+            "setDataValidation": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "startRowIndex": start_row - 1,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": col_idx - 1,
+                    "endColumnIndex": col_idx,
+                },
+                "rule": {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": [{"userEnteredValue": v} for v in options],
+                    },
+                    "showCustomUi": True,
+                    "strict": False,
+                },
+            }
+        })
+    worksheet.spreadsheet.batch_update({"requests": requests})
 
 
 def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: str = None) -> int:
@@ -252,33 +331,75 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
     logger.info(f"Sheets: {len(existing_keys)} existing leads in sheet.")
 
     # Filter to truly new records
-    today = date.today().isoformat()
     rows_to_add = []
+    leads_appended = 0
     for record in new_records:
+        # Dedup key uses name + street (what's stored in sheet cols B and C)
+        prop_street, prop_city, prop_state, prop_zip = _parse_address(
+            record.get("property_address", "")
+        )
         key = (
             record.get("owner_name", "").strip().lower(),
-            record.get("property_address", "").strip().lower(),
+            prop_street.strip().lower(),
         )
         if key in existing_keys:
             continue
         existing_keys.add(key)  # prevent within-batch dupes
+        leads_appended += 1
 
-        row = []
-        for field in FIELD_MAP:
-            val = record.get(field, "")
-            # Clean up "nan" strings from pandas
-            if val is None or str(val).strip().lower() == "nan":
-                val = ""
-            val = str(val)
-            # Normalize dates to MM/DD/YYYY
-            if field in ("filing_date", "sale_date"):
-                val = _normalize_date(val)
-            row.append(val)
+        mail_street, mail_city, mail_state, mail_zip = _parse_address(
+            record.get("mailing_address", "")
+        )
 
-        row.append(today)  # date_added
-        row.append("")     # status (coworker fills in)
-        row.append("")     # notes (coworker fills in)
+        # Clean nan values
+        owner_name = _clean_val(record.get("owner_name", ""))
+        lender = _clean_val(record.get("lender", ""))
+        attorney = _clean_val(record.get("attorney", ""))
+
+        # Owner row (all 18 columns filled)
+        row = [
+            _normalize_date(record.get("filing_date", "")),   # Date Posted
+            owner_name,                                        # Name
+            prop_street,                                       # Property Address
+            prop_city,                                         # Property City
+            prop_state,                                        # Property State
+            prop_zip,                                          # Property Zip
+            mail_street,                                       # Mailing Address
+            lender,                                            # Lender
+            attorney,                                          # Attorney
+            "",                                                # Active
+            "",                                                # In Crm
+            _clean_val(record.get("origination_year", "")),       # Loan Secured
+            _format_dollar(record.get("loan_amount", "")),           # Loan Amount
+            _clean_val(record.get("estimated_home_value", "")),   # Estimated Value
+            _clean_val(record.get("estimated_equity", "")),       # Estimated Equity
+            _clean_val(record.get("equity_note", "")),            # Equity Note
+            "",                                                # Remarks
+            owner_name,                                        # Name (traced)
+            _clean_phone(record.get("phone_1", "")),           # Phone Number
+            "",                                                # Relationship
+            "",                                                # Call Status (dropdown)
+        ]
         rows_to_add.append(row)
+
+        # Relative rows underneath — name, phone, and relationship right next to each other
+        for ri in range(1, 7):
+            rel_name = _clean_val(record.get(f"rel_{ri}_name", ""))
+            rel_phone = _clean_phone(record.get(f"rel_{ri}_phone_1", ""))
+            if not rel_name and not rel_phone:
+                continue
+            rel_relationship = _clean_val(record.get(f"rel_{ri}_relationship", ""))
+            rel_same_addr = _clean_val(record.get(f"rel_{ri}_same_address", ""))
+            label = rel_relationship if rel_relationship else "Relative"
+            if rel_same_addr.lower() in ("yes", "true", "1"):
+                label += " (same addr)"
+
+            # U (Name) + V (Phone) + W (Relationship) — use header index for safety
+            rel_row = [""] * NUM_COLS
+            rel_row[HEADER_ROW.index("Name", 2)] = rel_name       # Name (2nd occurrence)
+            rel_row[HEADER_ROW.index("Phone Number")] = rel_phone  # V: Phone Number
+            rel_row[HEADER_ROW.index("Relationship")] = label      # W: Relationship
+            rows_to_add.append(rel_row)
 
     if not rows_to_add:
         logger.info("Sheets: all records already in sheet, nothing to append.")
@@ -293,9 +414,10 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
     cell_range = f"A{start_row}:{LAST_COL_LETTER}{end_row}"
     worksheet.update(cell_range, rows_to_add)
 
-    # Highlight new rows
+    # Highlight new rows and add Call Status dropdown
     _highlight_rows(worksheet, start_row, end_row)
+    _add_dropdowns(worksheet, start_row, end_row)
 
-    logger.info(f"Sheets: appended {len(rows_to_add)} new lead(s) (rows {start_row}-{end_row}).")
-    print(f"\n✓ Appended {len(rows_to_add)} new lead(s) to Google Sheet")
-    return len(rows_to_add)
+    logger.info(f"Sheets: appended {leads_appended} lead(s) ({len(rows_to_add)} rows incl. relatives, rows {start_row}-{end_row}).")
+    print(f"\n✓ Appended {leads_appended} lead(s) ({len(rows_to_add)} rows) to Google Sheet")
+    return leads_appended

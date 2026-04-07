@@ -263,6 +263,35 @@ LOAN_AMOUNT_PATTERNS = [
     r"(?:Loan|Note)\s+Amount[:\s]+\$\s*([\d,]+(?:\.\d{2})?)",
 ]
 
+# --- Attorney / Substitute Trustee ---
+ATTORNEY_PATTERNS = [
+    # Labeled "Substitute Trustee:\n NAME" (Graham format — label on its own line)
+    r"Substitute\s+Trustee:\s*\n\s*([A-Z][A-Za-z\s.,&'-]{2,80}?)(?=\n)",
+    # Labeled "Substitute Trustee: NAME" (on same line, reject boilerplate words)
+    r"Substitute\s+Trustee:\s+(?!under\b|need\b|shall\b|will\b|may\b|is\b|the\b|to\b|of\b|or\b)([A-Z][A-Za-z\s.,&'-]{2,80}?)(?=\n)",
+    # "following Substitute Trustees:\n D. Wade Hayden, Michael W. Bitter"
+    r"(?:Substitute\s+)?Trustee[s]?:\s*\n\s*([A-Z][A-Za-z\s.,&'-]{3,80}?)(?=\s*\n)",
+    # "Appointment of Substitute Trustee ... conducted by ... :\n NAME, NAME"
+    r"Appointment\s+of\s+Substitute\s+Trustee.*?:\s*\n\s*([A-Z][A-Za-z\s.,&'-]{3,80}?)(?=\s*\n)",
+    # "By: [ATTORNEY NAME]" signature block (near end of document)
+    r"(?:^|\n)\s*By[:\s]+/?[Ss]/?[:\s]*([A-Z][A-Za-z\s.,&'-]{3,60}?)(?=\s*\n|,\s*(?:Substitute|Trustee|Attorney))",
+    # "Attorney for Mortgagee: FIRM NAME"
+    r"Attorney\s+for\s+(?:Mortgagee|Beneficiary|Lender)[:\s]+([A-Z][A-Za-z\s.,&'-]{3,80}?)(?=\n)",
+    # Known firm names that appear in headers/footers/signature blocks
+    r"(Barrett\s+Daffin\s+Frappier[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(McCarthy\s+&?\s*Holthus[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Codilis\s+&?\s*Mood[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Hughes,?\s+Watters?\s+&?\s*Askanase[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Mackie\s+Wolf\s+Zientz[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(De\s+Cubas\s+&?\s*Lewis[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Miller\s+George\s+&?\s*Suggs[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Malcolm\s+Cisneros[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Aldridge\s+Pite[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Trujillo\s+&?\s*Foster[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(AVT\s+Title\s+Services?[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+    r"(Jack\s+O'?Boyle\s+&?\s*Associates?[A-Za-z\s&.,]*?)(?=\n|\s{2,})",
+]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -294,6 +323,7 @@ _ADDRESS_BLOCKLIST = re.compile(
     r'|14841\s+Dallas\s+Parkway'       # AVT Title (Dallas)
     r'|3313\s+W\s+Commercial'          # De Cubas & Lewis (FL)
     r'|3333\s+Camino\s+Del\s+Rio'      # Aldridge Pite (San Diego)
+    r'|6700\s+N\.?\s+New\s+Braunfels'  # attorney office (San Antonio)
     r'|7750\s+Broadway'                # attorney office (San Antonio area)
     r'|906\s+W\.?\s+McDermott'         # office address (Allen, TX)
     r'|1717\s+Main\s+St'              # attorney office (Dallas)
@@ -438,5 +468,6 @@ def _parse_block(block: str, source_file: str) -> dict:
         "lender":           _first_match(block, LENDER_PATTERNS),
         "case_number":      _first_match(block, CASE_NUMBER_PATTERNS),
         "loan_amount":      _first_match(block, LOAN_AMOUNT_PATTERNS),
+        "attorney":         _first_match(block, ATTORNEY_PATTERNS),
         "source_file":      source_file,
     }

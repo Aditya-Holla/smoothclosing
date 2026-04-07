@@ -236,6 +236,7 @@ def clean_record(record: dict) -> Optional[dict]:
         "filing_date":      _normalize_date(record.get("filing_date")),
         "sale_date":        _normalize_date(record.get("sale_date")),
         "lender":           _normalize_lender(record.get("lender")),
+        "attorney":         _clean_str(record.get("attorney")),
         "case_number":      _normalize_case_number(record.get("case_number")),
         "loan_amount":      _normalize_loan_amount(record.get("loan_amount")),
         "source_file":      _clean_str(record.get("source_file")),

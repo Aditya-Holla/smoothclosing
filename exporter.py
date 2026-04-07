@@ -17,6 +17,7 @@ CSV_COLUMNS = [
     "filing_date",
     "sale_date",
     "lender",
+    "attorney",
     "case_number",
     "loan_amount",
     "source_file",

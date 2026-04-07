@@ -87,7 +87,7 @@ def equity_color(row: pd.Series) -> list[str]:
 
 DISPLAY_COLUMNS = [
     "owner_name", "property_address", "mailing_address",
-    "filing_date", "sale_date", "lender", "loan_amount",
+    "filing_date", "sale_date", "lender", "attorney", "loan_amount",
     "origination_year", "interest_rate_pct", "elapsed_months",
     "remaining_balance", "estimated_home_value", "estimated_equity",
     "equity_note", "needs_review",
