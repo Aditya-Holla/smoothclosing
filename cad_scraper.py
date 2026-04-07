@@ -230,43 +230,99 @@ def search_bis(county: str, query: str, search_type: str = "owner") -> list[dict
         page = context.pages[0] if context.pages else context.new_page()
 
         try:
-            # Navigate to search page
-            page.goto(f"{base_url}/Search/Result?keywords={query.replace(' ', '+')}&TaxYear=2025",
-                      timeout=30000, wait_until="networkidle")
+            # Go to homepage first (direct result URLs cause session expiry)
+            page.goto(base_url, timeout=30000, wait_until="networkidle")
             time.sleep(3)
 
-            # Wait for Blazor to render results
-            page.wait_for_selector("#results-page", timeout=10000)
-            time.sleep(2)
+            # BIS sites have two layouts:
+            # - Hays/Bastrop: single search box (#keywords)
+            # - Bell/Burnet: tabbed form (By Owner, By Address, By ID)
 
-            # Try to find result rows — BIS uses a grid with rows
-            rows = page.locator("tr.search-result-row, .result-item, [data-propertyid]").all()
-
-            if not rows:
-                # Try alternative: look for any links to property detail
-                rows = page.locator("a[href*='Property/Detail'], a[href*='property']").all()
-
-            if not rows:
-                # Last resort: scrape visible text for property-like data
-                body_text = page.inner_text("body")
-                logger.info("BIS %s: no structured results found. Page text sample: %s",
-                           county, body_text[:300])
-                context.close()
-                return []
-
-            for row in rows[:20]:  # limit to 20 results
+            # Try tabbed form first (Bell/Burnet)
+            if search_type == "address":
                 try:
-                    text = row.inner_text(timeout=2000)
-                    # Parse the row text — BIS typically shows: PropertyID | OwnerName | Address | Value
-                    parts = [p.strip() for p in text.split('\n') if p.strip()]
+                    addr_tab = page.locator("text=By Address").first
+                    if addr_tab.is_visible(timeout=2000):
+                        addr_tab.click()
+                        time.sleep(1)
+                    # Split address into number + street
+                    parts = query.strip().split(None, 1)
+                    street_num = parts[0] if parts else ""
+                    street_name = parts[1] if len(parts) > 1 else query
+                    num_input = page.locator("input[name='StreetNumber']").first
+                    name_input = page.locator("input[name='StreetName']").first
+                    if num_input.is_visible(timeout=2000):
+                        num_input.fill(street_num)
+                        name_input.fill(street_name)
+                        page.locator("button:has-text('Search')").first.click()
+                        time.sleep(5)
+                        page.wait_for_selector("#results-page", timeout=15000)
+                        time.sleep(2)
+                    else:
+                        raise Exception("Address form not found, try keywords")
+                except Exception:
+                    # Fall back to keywords search
+                    search_input = page.locator("#keywords, input[name='keywords']").first
+                    if search_input.is_visible(timeout=2000):
+                        search_input.fill(query)
+                        search_input.press("Enter")
+                        time.sleep(5)
+                        page.wait_for_selector("#results-page", timeout=15000)
+                        time.sleep(2)
+            else:
+                # Owner name search
+                try:
+                    owner_input = page.locator("input[name='OwnerName']").first
+                    if owner_input.is_visible(timeout=2000):
+                        owner_input.fill(query)
+                        page.locator("button:has-text('Search')").first.click()
+                        time.sleep(5)
+                        page.wait_for_selector("#results-page", timeout=15000)
+                        time.sleep(2)
+                    else:
+                        raise Exception("Owner form not found, try keywords")
+                except Exception:
+                    # Fall back to keywords search (Hays/Bastrop)
+                    search_input = page.locator("#keywords, input[name='keywords']").first
+                    if search_input.is_visible(timeout=2000):
+                        search_input.fill(query)
+                        search_input.press("Enter")
+                        time.sleep(5)
+                        page.wait_for_selector("#results-page", timeout=15000)
+                        time.sleep(2)
+
+            # BIS Blazor renders results as tab-separated text in the page body
+            # Format: Quick Ref ID\tNbrhd\tType\tOwner Name\tOwner ID\tSitus Address\tAppraised
+            body_text = page.inner_text("body")
+            lines = body_text.split('\n')
+
+            in_results = False
+            for line in lines:
+                line = line.strip()
+                if 'Quick Ref ID' in line:
+                    in_results = True
+                    continue
+                if not in_results or not line:
+                    continue
+                # Stop at pagination
+                if re.match(r'^[\d\s]+$', line) and len(line) < 20:
+                    break
+
+                # Parse tab-separated row
+                cols = line.split('\t')
+                if len(cols) >= 5:
+                    prop_id = cols[0].strip()
+                    owner = cols[3].strip() if len(cols) > 3 else ""
+                    address = cols[5].strip() if len(cols) > 5 else ""
+                    value = cols[6].strip() if len(cols) > 6 else ""
 
                     result = {
                         "county": county_name,
-                        "property_id": "",
-                        "owner_name": "",
-                        "property_address": "",
+                        "property_id": prop_id,
+                        "owner_name": owner,
+                        "property_address": address,
                         "mailing_address": "",
-                        "market_value": "",
+                        "market_value": value,
                         "assessed_value": "",
                         "year_built": "",
                         "sqft": "",
@@ -275,24 +331,12 @@ def search_bis(county: str, query: str, search_type: str = "owner") -> list[dict
                         "legal_description": "",
                         "deed_history": "",
                     }
+                    results.append(result)
 
-                    # Try to extract structured data
-                    for part in parts:
-                        if re.match(r'^[RP]\d+', part):
-                            result["property_id"] = part
-                        elif '$' in part:
-                            result["market_value"] = part
-                        elif re.match(r'^\d+\s+[A-Z]', part):
-                            result["property_address"] = part
-                        elif part and not result["owner_name"]:
-                            result["owner_name"] = part
+            if not results:
+                logger.info("BIS %s: no results found for %r", county, query)
 
-                    if result["owner_name"] or result["property_address"]:
-                        results.append(result)
-                except Exception:
-                    continue
-
-            # Try clicking into detail pages for richer data
+            # Get detail for first few results
             for r in results[:5]:
                 if r["property_id"]:
                     try:
@@ -365,117 +409,84 @@ def search_travis(query: str, search_type: str = "owner") -> list[dict]:
                       timeout=30000, wait_until="networkidle")
             time.sleep(3)
 
-            # Find and fill the search input
+            # Find the search input (placeholder: "Search by Account Number, Address or Owner Name")
             search_input = page.locator(
-                "input[placeholder*='property'], input[placeholder*='search'], "
-                "input[placeholder*='Enter'], input[type='search'], input[type='text']"
+                "input[placeholder*='Search by'], input[placeholder*='Owner Name'], "
+                "input[type='text']"
             ).first
 
             search_input.click()
             search_input.fill(query)
             time.sleep(1)
+            search_input.press("Enter")
+            time.sleep(8)  # React app needs time to fetch + render
 
-            # Press Enter or click search button
-            try:
-                search_btn = page.locator(
-                    "button:has-text('Search'), button[type='submit'], "
-                    "button:has-text('search'), [aria-label='Search']"
-                ).first
-                if search_btn.is_visible(timeout=2000):
-                    search_btn.click()
-                else:
-                    search_input.press("Enter")
-            except Exception:
-                search_input.press("Enter")
-
-            time.sleep(5)
-
-            # Scrape results
+            # Scrape results — Prodigy AG Grid renders each row as a group of lines:
+            # row_num, year, PropID, Type, GEO_ID, [Ref_ID], Tax_Office_ID,
+            # Owner Name, ARB Hearing (No/Yes), [DBA], Property Address
             body_text = page.inner_text("body")
-
-            # Look for property rows in results
-            # Prodigy typically shows: Property ID | Owner | Address | Value
             lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
-            i = 0
+            # Find where results start (after "Property Address" header)
+            start_idx = 0
+            for i, line in enumerate(lines):
+                if line == "Property Address":
+                    start_idx = i + 1
+                    break
+
+            i = start_idx
             while i < len(lines):
                 line = lines[i]
-                # Look for property ID patterns (Travis uses R + digits)
-                if re.match(r'^R?\d{5,}', line):
-                    result = {
-                        "county": "Travis",
-                        "property_id": line,
-                        "owner_name": "",
-                        "property_address": "",
-                        "mailing_address": "",
-                        "market_value": "",
-                        "assessed_value": "",
-                        "year_built": "",
-                        "sqft": "",
-                        "lot_size": "",
-                        "bedrooms": "",
-                        "legal_description": "",
-                        "deed_history": "",
-                    }
-
-                    # Next lines usually have owner and address
-                    for j in range(1, 5):
-                        if i + j >= len(lines):
+                # Row numbers are sequential integers (1, 2, 3...)
+                if re.match(r'^\d{1,3}$', line) and int(line) <= 200:
+                    # Parse the group of lines for this result
+                    group = []
+                    j = i + 1
+                    while j < len(lines) and not (re.match(r'^\d{1,3}$', lines[j]) and int(lines[j]) <= 200):
+                        group.append(lines[j])
+                        j += 1
+                        if len(group) > 15:
                             break
-                        next_line = lines[i + j]
-                        if '$' in next_line:
-                            result["market_value"] = next_line
-                        elif re.match(r'^\d+\s+[A-Z]', next_line) and not result["property_address"]:
-                            result["property_address"] = next_line
-                        elif next_line and not result["owner_name"] and not next_line.startswith('R'):
-                            result["owner_name"] = next_line
 
-                    if result["owner_name"] or result["property_address"]:
-                        # Filter by search type
-                        if search_type == "owner" and query.lower() in result["owner_name"].lower():
-                            results.append(result)
-                        elif search_type == "address" and query.lower() in result["property_address"].lower():
-                            results.append(result)
-                        elif search_type not in ("owner", "address"):
-                            results.append(result)
-                    i += 5
+                    # Extract fields from group
+                    owner = ""
+                    address = ""
+                    prop_id = ""
+                    for g in group:
+                        if re.match(r'^\d{4,7}$', g) and not prop_id:
+                            prop_id = g
+                        elif re.match(r'^\d+\s+[A-Z]', g) and not address:
+                            address = g
+                        elif g in ('R', 'P', 'MH', 'No', 'Yes', '2026', '2025'):
+                            continue
+                        elif re.match(r'^[\dA-Z]{6,}$', g):
+                            continue  # GEO ID, Tax Office ID
+                        elif g and not owner and len(g) > 3:
+                            owner = g
+
+                    if owner or address:
+                        results.append({
+                            "county": "Travis",
+                            "property_id": prop_id,
+                            "owner_name": owner,
+                            "property_address": address,
+                            "mailing_address": "",
+                            "market_value": "",
+                            "assessed_value": "",
+                            "year_built": "",
+                            "sqft": "",
+                            "lot_size": "",
+                            "bedrooms": "",
+                            "legal_description": "",
+                            "deed_history": "",
+                        })
+
+                    i = j
                 else:
                     i += 1
 
-            # If no structured results, try clicking on first result link
-            if not results:
-                links = page.locator("a[href*='property'], a[href*='detail'], tr[class*='result']").all()
-                for link in links[:5]:
-                    try:
-                        text = link.inner_text(timeout=1000)
-                        if query.lower() in text.lower():
-                            result = {
-                                "county": "Travis",
-                                "property_id": "",
-                                "owner_name": "",
-                                "property_address": "",
-                                "mailing_address": "",
-                                "market_value": "",
-                                "assessed_value": "",
-                                "year_built": "",
-                                "sqft": "",
-                                "lot_size": "",
-                                "bedrooms": "",
-                                "legal_description": "",
-                                "deed_history": "",
-                            }
-                            parts = [p.strip() for p in text.split('\n') if p.strip()]
-                            for part in parts:
-                                if re.match(r'^\d+\s+[A-Z]', part) and not result["property_address"]:
-                                    result["property_address"] = part
-                                elif '$' in part:
-                                    result["market_value"] = part
-                                elif part and not result["owner_name"]:
-                                    result["owner_name"] = part
-                            if result["owner_name"] or result["property_address"]:
-                                results.append(result)
-                    except Exception:
-                        continue
+            # Limit results
+            results = results[:20]
 
         except Exception as e:
             logger.error("Travis CAD search failed: %s", e)
