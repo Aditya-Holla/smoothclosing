@@ -7,6 +7,7 @@ from agents.subagents.skip_trace_agent import SKIP_TRACE_AGENT
 from agents.subagents.sms_agent import SMS_AGENT
 from agents.subagents.sheets_agent import SHEETS_AGENT
 from agents.subagents.cad_agent import CAD_AGENT
+from agents.subagents.gbp_agent import GBP_AGENT
 
 SYSTEM_PROMPT = """\
 You are the SmoothClosing acquisitions assistant. You help a small Texas \
@@ -36,6 +37,11 @@ ownership, deed history, property specs (sqft, lot size, year built), and \
 values. Use for: "who owns this property", "look up deed history", "find \
 flippers near this address", "search CAD for [name/address]". Supports \
 6 counties: Williamson, Hays, Bastrop, Bell, Burnet, and Travis.
+
+6. **gbp-agent** — Manages the Google Business Profile. Can list and reply \
+to customer reviews, and create local posts (updates, offers, events). Use \
+for: "check reviews", "reply to reviews", "create a post", "post an update", \
+"create an offer", "respond to that review".
 
 ## Workflow Rules
 
@@ -95,6 +101,7 @@ def build_options(resume_session_id: str = None) -> ClaudeAgentOptions:
             "sms-agent": SMS_AGENT,
             "sheets-agent": SHEETS_AGENT,
             "cad-agent": CAD_AGENT,
+            "gbp-agent": GBP_AGENT,
         },
     )
     if resume_session_id:

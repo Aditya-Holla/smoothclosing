@@ -2,6 +2,7 @@
 .env
 credentials.json
 token.json
+gbp_token.json
 *.pem
 *.key
 
@@ -37,6 +38,7 @@ venv/
 
 # Playwright browser cache
 .skipgenie_session/
+.cad_session/
 
 # macOS
 .DS_Store

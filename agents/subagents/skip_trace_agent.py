@@ -17,11 +17,13 @@ using Skip Genie to find phone numbers, emails, and relatives for leads.
 
 ### Mode 1: Address-first search (foreclosure leads with addresses)
 ```
-python skipgenie.py --input <csv> --output <csv> [--headless true] [--max-relatives 6] [--debug]
+python skipgenie.py --input <csv> --output <csv> [--headless true] [--max-relatives 0] [--debug]
 ```
 - Input CSV needs: owner_name AND property_address columns
 - Searches by address first to find the current resident
-- Extracts phones, emails, AND up to 6 relatives with relationship inference
+- Default: owner phone + up to 6 relatives (max-relatives=6)
+- Each relative is searched by name (1 credit each), no back-navigation needed
+- Skips leads that already have a phone_1 value (won't re-trace)
 - Best for foreclosure leads where you have the property address
 
 ### Mode 2: Name-only search (standalone CSV)
@@ -35,10 +37,12 @@ python skip_genie_search.py [--limit N] [--start N]
 
 ### Mode 3: Buyer tracer (Sheet3 → Skip Genie → Sheet3)
 ```
+python buyer_tracer.py --all-tabs [--limit N] [--headless false] [--debug]
 python buyer_tracer.py --tab "Austin Metro" [--limit N] [--headless false] [--debug]
 ```
 - Reads from the Dispositions Google Sheet (default sheet ID built in)
-- Use --tab to select which metro tab: "Austin Metro", "Houston Metro", \
+- Use --all-tabs to process EVERY tab in one run (single browser session)
+- Use --tab to select a single metro tab: "Austin Metro", "Houston Metro", \
 "San Antonio Metro", "Dallas Metro"
 - Use --list-tabs to see all available tabs
 - Use --sheet-id to target a different Google Sheet

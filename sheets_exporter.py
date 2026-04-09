@@ -28,7 +28,6 @@ HEADER_ROW = [
     "Property Zip",
     "Mailing Address",
     "Lender",
-    "Attorney",
     "Active",
     "In Crm",
     "Loan Secured",
@@ -354,9 +353,8 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
         # Clean nan values
         owner_name = _clean_val(record.get("owner_name", ""))
         lender = _clean_val(record.get("lender", ""))
-        attorney = _clean_val(record.get("attorney", ""))
 
-        # Owner row (all 18 columns filled)
+        # Owner row (all columns filled)
         row = [
             _normalize_date(record.get("filing_date", "")),   # Date Posted
             owner_name,                                        # Name
@@ -366,7 +364,6 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
             prop_zip,                                          # Property Zip
             mail_street,                                       # Mailing Address
             lender,                                            # Lender
-            attorney,                                          # Attorney
             "",                                                # Active
             "",                                                # In Crm
             _clean_val(record.get("origination_year", "")),       # Loan Secured

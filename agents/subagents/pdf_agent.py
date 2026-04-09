@@ -32,7 +32,19 @@ python main.py --input ./input_pdfs --output leads.csv [--debug]
 - Deduplicates against pipeline_state.json (cross-run) and within-run
 - Appends to output CSV (creates it if missing)
 
-### 3. Estimate equity via RentCast
+### 3. Recover garbage names + missing addresses from PDFs
+```
+python lead_recovery.py --input leads.csv --output leads_recovered.csv [--pdf-dir ./input_pdfs]
+```
+- Uses Claude vision (Haiku) to read the source PDF and fix bad OCR data
+- Fixes two problems: garbage owner names AND missing property addresses
+- Detects garbage names: too short, starts with common words, contains digits,
+  parser artifacts like "Original", "Single", "The Transfer Of Title", etc.
+- Each lead costs a few cents (Haiku vision on 2-5 pages)
+- Groups by source PDF to minimize redundant reads
+- Automatically called by main.py after parsing, before dedup
+
+### 4. Estimate equity via RentCast
 ```
 python equity_estimator.py --input leads.csv --output leads_with_equity.csv [--debug]
 ```

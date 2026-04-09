@@ -19,324 +19,378 @@
       "url": "https://www.burnetcountytexas.org/upload/page/0085/Sanders 5-5-26.pdf",
       "downloaded_at": "2026-04-03T14:49:09.835580",
       "size_bytes": 521115
+    },
+    "burnet/Stanfield 5-5-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Stanfield 5-5-26.pdf",
+      "downloaded_at": "2026-04-09T09:25:35.194830",
+      "size_bytes": 307579
+    },
+    "burnet/Headrick 6-2-26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/Headrick 6-2-26.pdf",
+      "downloaded_at": "2026-04-09T09:25:36.335768",
+      "size_bytes": 307208
+    },
+    "hays/MAY+2026+Batch+5.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/MAY+2026+Batch+5.pdf",
+      "downloaded_at": "2026-04-09T09:25:46.190459",
+      "size_bytes": 409256
+    },
+    "hays/JUNE+2026+Batch+4.pdf": {
+      "url": "https://irp.cdn-website.com/ca0063d4/files/uploaded/JUNE+2026+Batch+4.pdf",
+      "downloaded_at": "2026-04-09T09:25:48.284948",
+      "size_bytes": 189138
+    },
+    "bell/May 7.pdf": {
+      "url": "https://www.bellcountytx.com/May 7.pdf?t=202604081553050",
+      "downloaded_at": "2026-04-09T09:25:58.546874",
+      "size_bytes": 2216229
+    },
+    "bell/June 4.pdf": {
+      "url": "https://www.bellcountytx.com/June 4.pdf?t=202604081553350",
+      "downloaded_at": "2026-04-09T09:26:00.919139",
+      "size_bytes": 1193176
     }
   },
   "processed_pdfs": {
     "04-21-2025_File_010.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132112",
+      "processed_at": "2026-04-07T10:10:57.877314",
       "records_extracted": 1
     },
     "11-07-2025_File_006.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132170",
+      "processed_at": "2026-04-07T10:10:57.877393",
       "records_extracted": 1
     },
     "11-07-2025_File_011.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132205",
+      "processed_at": "2026-04-07T10:10:57.877436",
       "records_extracted": 1
     },
     "11-07-2025_File_021.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132238",
+      "processed_at": "2026-04-07T10:10:57.877475",
       "records_extracted": 1
     },
     "11-07-2025_File_026.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132271",
+      "processed_at": "2026-04-07T10:10:57.877514",
       "records_extracted": 1
     },
     "11-21-2025_File_005.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132305",
+      "processed_at": "2026-04-07T10:10:57.877552",
       "records_extracted": 1
     },
     "April 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132338",
+      "processed_at": "2026-04-07T10:10:57.877591",
       "records_extracted": 1
     },
     "April 6 (1).pdf": {
-      "processed_at": "2026-04-05T00:09:32.132371",
+      "processed_at": "2026-04-07T10:10:57.877629",
       "records_extracted": 11
     },
     "April 6.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132402",
+      "processed_at": "2026-04-07T10:10:57.877666",
       "records_extracted": 0
     },
     "April+2026+Batch+1 (1).pdf": {
-      "processed_at": "2026-04-05T00:09:32.132434",
+      "processed_at": "2026-04-07T10:10:57.877704",
       "records_extracted": 1
     },
     "April+2026+Batch+1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132465",
+      "processed_at": "2026-04-07T10:10:57.877741",
       "records_extracted": 0
     },
     "Fournier 2 - posted.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132498",
+      "processed_at": "2026-04-07T10:10:57.877781",
       "records_extracted": 1
     },
     "Graham 4.7.26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132530",
+      "processed_at": "2026-04-07T10:10:57.877818",
       "records_extracted": 1
     },
     "Hobbs 4-7-26 (1).pdf": {
-      "processed_at": "2026-04-05T00:09:32.132561",
+      "processed_at": "2026-04-07T10:10:57.877855",
       "records_extracted": 1
     },
     "June 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132593",
+      "processed_at": "2026-04-07T10:10:57.877895",
       "records_extracted": 2
     },
     "June+2026+Batch+2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132624",
+      "processed_at": "2026-04-07T10:10:57.877932",
       "records_extracted": 1
     },
     "May 4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132655",
+      "processed_at": "2026-04-07T10:10:57.877971",
       "records_extracted": 4
     },
     "May+2026+Batch+2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132687",
+      "processed_at": "2026-04-07T10:10:57.878008",
       "records_extracted": 1
     },
     "bell/April 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132719",
+      "processed_at": "2026-04-07T10:10:57.878046",
       "records_extracted": 1
     },
     "bell/April 2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132750",
+      "processed_at": "2026-04-07T10:10:57.878084",
       "records_extracted": 2
     },
     "bell/April 3.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132782",
+      "processed_at": "2026-04-07T10:10:57.878121",
       "records_extracted": 6
     },
     "bell/April 4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132814",
+      "processed_at": "2026-04-07T10:10:57.878160",
       "records_extracted": 4
     },
     "bell/April 5.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132846",
+      "processed_at": "2026-04-07T10:10:57.878199",
       "records_extracted": 2
     },
     "bell/April 6.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132878",
+      "processed_at": "2026-04-07T10:10:57.878237",
       "records_extracted": 0
     },
     "bell/April 7.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132910",
+      "processed_at": "2026-04-07T10:10:57.878275",
       "records_extracted": 6
     },
     "bell/April 8.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132941",
+      "processed_at": "2026-04-07T10:10:57.878317",
       "records_extracted": 7
     },
     "bell/June 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.132972",
+      "processed_at": "2026-04-07T10:10:57.878354",
       "records_extracted": 2
     },
     "bell/June 2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133003",
+      "processed_at": "2026-04-07T10:10:57.878390",
       "records_extracted": 1
     },
     "bell/May 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133036",
+      "processed_at": "2026-04-07T10:10:57.878427",
       "records_extracted": 0
     },
     "bell/May 2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133067",
+      "processed_at": "2026-04-07T10:10:57.878464",
       "records_extracted": 1
     },
     "bell/May 3.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133098",
+      "processed_at": "2026-04-07T10:10:57.878501",
       "records_extracted": 0
     },
     "bell/May 4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133131",
+      "processed_at": "2026-04-07T10:10:57.878539",
       "records_extracted": 4
     },
     "bell/May 5.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133162",
+      "processed_at": "2026-04-07T10:10:57.878576",
       "records_extracted": 1
     },
     "burnet/Bubbbles  Barks Holdings 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133193",
+      "processed_at": "2026-04-07T10:10:57.878612",
       "records_extracted": 0
     },
     "burnet/Comm. Court Certificate.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133224",
+      "processed_at": "2026-04-07T10:10:57.878650",
       "records_extracted": 0
     },
     "burnet/FEES 01012024.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133256",
+      "processed_at": "2026-04-07T10:10:57.878687",
       "records_extracted": 0
     },
     "burnet/Fournier 1 - posted.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133288",
+      "processed_at": "2026-04-07T10:10:57.878726",
       "records_extracted": 1
     },
     "burnet/Fournier 2 - posted.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133321",
+      "processed_at": "2026-04-07T10:10:57.878764",
       "records_extracted": 1
     },
     "burnet/Garcia 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133352",
+      "processed_at": "2026-04-07T10:10:57.878801",
       "records_extracted": 1
     },
     "burnet/Graham 4.7.26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133384",
+      "processed_at": "2026-04-07T10:10:57.878838",
       "records_extracted": 1
     },
     "burnet/Hobbs 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133415",
+      "processed_at": "2026-04-07T10:10:57.878874",
       "records_extracted": 0
     },
     "burnet/Jennings 06.02.2026.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133448",
+      "processed_at": "2026-04-07T10:10:57.878911",
       "records_extracted": 1
     },
     "burnet/LTX Holdings  4.7.2026 5.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133479",
+      "processed_at": "2026-04-07T10:10:57.878949",
       "records_extracted": 0
     },
     "burnet/LTX Holdings 4.7.2026 3.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133512",
+      "processed_at": "2026-04-07T10:10:57.878990",
       "records_extracted": 0
     },
     "burnet/LTX Holdings 4.7.2026 4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133544",
+      "processed_at": "2026-04-07T10:10:57.879028",
       "records_extracted": 0
     },
     "burnet/LTX Holdings 4.7.2026_Part1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133575",
+      "processed_at": "2026-04-07T10:10:57.879065",
       "records_extracted": 0
     },
     "burnet/LTX Holdings4.7.2026_Part2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133607",
+      "processed_at": "2026-04-07T10:10:57.879103",
       "records_extracted": 0
     },
     "burnet/Lawson and Bean 04.07.2026.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133637",
+      "processed_at": "2026-04-07T10:10:57.879139",
       "records_extracted": 1
     },
     "burnet/Longoria-Salazar 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133669",
+      "processed_at": "2026-04-07T10:10:57.879176",
       "records_extracted": 1
     },
     "burnet/Martich-Barbee 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133699",
+      "processed_at": "2026-04-07T10:10:57.879213",
       "records_extracted": 1
     },
     "burnet/McCarty 5-5-26 1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133731",
+      "processed_at": "2026-04-07T10:10:57.879250",
       "records_extracted": 1
     },
     "burnet/Nelson 5-5-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133762",
+      "processed_at": "2026-04-07T10:10:57.879287",
       "records_extracted": 0
     },
     "burnet/Posted Ramirez Foreclosure Posting.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133794",
+      "processed_at": "2026-04-07T10:10:57.879324",
       "records_extracted": 1
     },
     "burnet/Rocking R and R Ranch.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133824",
+      "processed_at": "2026-04-07T10:10:57.879362",
       "records_extracted": 0
     },
     "burnet/Sanders 5-5-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133856",
+      "processed_at": "2026-04-07T10:10:57.879398",
       "records_extracted": 1
     },
     "burnet/Schwartz jr 4-4-26 Posted.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133887",
+      "processed_at": "2026-04-07T10:10:57.879435",
       "records_extracted": 1
     },
     "burnet/Vanderway-Sostak 5-5-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133918",
+      "processed_at": "2026-04-07T10:10:57.879475",
       "records_extracted": 1
     },
     "burnet/Whitaker Bostick 4.7.2026.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133949",
+      "processed_at": "2026-04-07T10:10:57.879513",
       "records_extracted": 1
     },
     "burnet/Woodley 4-7-26.pdf": {
-      "processed_at": "2026-04-05T00:09:32.133980",
+      "processed_at": "2026-04-07T10:10:57.879549",
       "records_extracted": 1
     },
     "hays/2022-Hays-District-Clerk-Civil-Fees.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134011",
+      "processed_at": "2026-04-07T10:10:57.879582",
       "records_extracted": 0
     },
     "hays/April+2026+Batch+1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134042",
+      "processed_at": "2026-04-07T10:10:57.879616",
       "records_extracted": 0
     },
     "hays/April+2026+Batch+2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134073",
+      "processed_at": "2026-04-07T10:10:57.879649",
       "records_extracted": 2
     },
     "hays/April+2026+Batch+3.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134104",
+      "processed_at": "2026-04-07T10:10:57.879682",
       "records_extracted": 3
     },
     "hays/April+2026+Batch+4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134135",
+      "processed_at": "2026-04-07T10:10:57.879715",
       "records_extracted": 3
     },
     "hays/April+2026+Batch+5-3902cd48.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134167",
+      "processed_at": "2026-04-07T10:10:57.879768",
       "records_extracted": 1
     },
     "hays/April+2026+Batch+6.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134198",
+      "processed_at": "2026-04-07T10:10:57.879807",
       "records_extracted": 2
     },
     "hays/August+2026+Batch+1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134229",
+      "processed_at": "2026-04-07T10:10:57.879841",
       "records_extracted": 0
     },
     "hays/FY24_Budget_Calendar_rev-c10fb121.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134260",
+      "processed_at": "2026-04-07T10:10:57.879874",
       "records_extracted": 0
     },
     "hays/Foreclosures.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134291",
+      "processed_at": "2026-04-07T10:10:57.879907",
       "records_extracted": 0
     },
     "hays/June+2026+Batch+1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134322",
+      "processed_at": "2026-04-07T10:10:57.879940",
       "records_extracted": 1
     },
     "hays/June+2026+Batch+2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134353",
+      "processed_at": "2026-04-07T10:10:57.879972",
       "records_extracted": 1
     },
     "hays/May+2026+Batch+1.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134384",
+      "processed_at": "2026-04-07T10:10:57.880005",
       "records_extracted": 1
     },
     "hays/May+2026+Batch+2.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134415",
+      "processed_at": "2026-04-07T10:10:57.880037",
       "records_extracted": 1
     },
     "hays/May+2026+Batch+3.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134447",
+      "processed_at": "2026-04-07T10:10:57.880070",
       "records_extracted": 2
     },
     "hays/May+2026+Batch+4.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134478",
+      "processed_at": "2026-04-07T10:10:57.880103",
       "records_extracted": 1
     },
     "hays/Online-Resources.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134509",
+      "processed_at": "2026-04-07T10:10:57.880136",
       "records_extracted": 0
     },
     "travis/bidder-registration-statement-spanish.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134540",
+      "processed_at": "2026-04-07T10:10:57.880168",
       "records_extracted": 0
     },
     "travis/tax-bidders-basic-guide.pdf": {
-      "processed_at": "2026-04-05T00:09:32.134570",
+      "processed_at": "2026-04-07T10:10:57.880200",
       "records_extracted": 0
     },
     "williamson/2024 Recording Fees (PDF).pdf": {
-      "processed_at": "2026-04-05T00:09:32.134601",
+      "processed_at": "2026-04-07T10:10:57.880233",
       "records_extracted": 0
+    },
+    "bell/June 4.pdf": {
+      "processed_at": "2026-04-09T12:14:35.354979",
+      "records_extracted": 5
+    },
+    "bell/May 7.pdf": {
+      "processed_at": "2026-04-09T12:14:35.355043",
+      "records_extracted": 7
+    },
+    "burnet/Headrick 6-2-26.pdf": {
+      "processed_at": "2026-04-09T12:14:35.355089",
+      "records_extracted": 0
+    },
+    "burnet/Stanfield 5-5-26.pdf": {
+      "processed_at": "2026-04-09T12:14:35.355137",
+      "records_extracted": 0
+    },
+    "hays/JUNE+2026+Batch+4.pdf": {
+      "processed_at": "2026-04-09T12:14:35.355180",
+      "records_extracted": 2
+    },
+    "hays/MAY+2026+Batch+5.pdf": {
+      "processed_at": "2026-04-09T12:14:35.355223",
+      "records_extracted": 3
     }
   },
   "known_lead_keys": [
@@ -346,43 +400,11 @@
     ],
     [
       "",
-      "11521 knapple cv"
-    ],
-    [
-      "",
-      "1201 huey drive. belton. tx 76513"
-    ],
-    [
-      "",
-      "1255 west, plano, tx 75075"
-    ],
-    [
-      "",
-      "1413 s roy reynolds dr. killeen, tx 76543"
-    ],
-    [
-      "",
       "1707 whitney way"
     ],
     [
       "",
-      "1717 main, dallas, tx 75201"
-    ],
-    [
-      "",
       "1730 e oltorf st"
-    ],
-    [
-      "",
-      "188 shale circle"
-    ],
-    [
-      "",
-      "2026 dated eb 1 y 2026, plano, tx 75075"
-    ],
-    [
-      "",
-      "2499 s. sppital of tx hwy., austin, tx 78746"
     ],
     [
       "",
@@ -394,19 +416,7 @@
     ],
     [
       "",
-      "3400 goodwin ave"
-    ],
-    [
-      "",
-      "453 lakeside beach, spicewood, tx 78669"
-    ],
-    [
-      "",
-      "501 royal court, cottonwood shores, tx 78654"
-    ],
-    [
-      "",
-      "5201 holster dr, killeen, tx 76549"
+      "3509 salt fork dr, killeen, tx 76549-0000"
     ],
     [
       "",
@@ -414,15 +424,7 @@
     ],
     [
       "",
-      "712 south stagecoach trail, san marcos, tx 78666"
-    ],
-    [
-      "",
-      "7908 goldenrod cv"
-    ],
-    [
-      "",
-      "cedar valley cv"
+      "6404 siltstone loop, killeen, tx 76542"
     ],
     [
       "abbigale walton and preston walton",
@@ -447,6 +449,10 @@
     [
       "brent mccarty",
       ""
+    ],
+    [
+      "brooklynne kristine vinklarek and dillon jackson vinklarek",
+      "275 shiro dr, kyle, tx 78640"
     ],
     [
       "cathryn fannin",
@@ -501,6 +507,18 @@
       "7006 reginald drive killeen. tx 76549"
     ],
     [
+      "devon nicholas robinson and tiara keaundra robinson, husband and wife",
+      "410! adolph ave, killeen. tx 76549"
+    ],
+    [
+      "diana lillard solis and ricardo solis arellano",
+      "712 south stagecoach trail, san marcos, tx 78666"
+    ],
+    [
+      "diana lillard solis and ricardo solis arellano, a married couple",
+      ""
+    ],
+    [
       "dioce stroud, predecessor in interest to quentin goode",
       ""
     ],
@@ -511,6 +529,18 @@
     [
       "donna field",
       "8424 brahma plains road temple. tx 76502"
+    ],
+    [
+      "douglas wilson and shelia a wilson",
+      ""
+    ],
+    [
+      "douglas wilson and shelia a wilson",
+      "1258 west 15th street, plano, tx 75075"
+    ],
+    [
+      "ee ne es oar and husband, and steven n atkinson",
+      "9007 alabama avenue temple, tx 76502"
     ],
     [
       "ee pine",
@@ -569,6 +599,10 @@
       ""
     ],
     [
+      "jean miller",
+      ""
+    ],
+    [
       "jeff woodley",
       "17999 fm 963"
     ],
@@ -589,8 +623,16 @@
       "207 gateway parkway"
     ],
     [
+      "juan carlos castillo and delia castillo",
+      "03 page 2 of 3, kyle, tx 78640"
+    ],
+    [
       "juan r. guinbs and julia a. gumbs",
       ""
+    ],
+    [
+      "kenneth e mccoy and shoroline mccoy",
+      "2906 bovd avenue, killeen, tx 76543-5958."
     ],
     [
       "kyle jason lawson and nyomi lee bean",
@@ -599,6 +641,10 @@
     [
       "leonardo huerta",
       ""
+    ],
+    [
+      "luis a gomez garcia",
+      "684 billowing way, kyle, tx 78640"
     ],
     [
       "luis daniel",
@@ -669,8 +715,16 @@
       "356 spiny lizard ln san marcos, tx 78666"
     ],
     [
+      "sandra g combs",
+      ""
+    ],
+    [
       "sandra lee ramirez",
       "285 mauve ln, kyle, tx 78640"
+    ],
+    [
+      "seid cust mexrgin",
+      "2106 bird creek drive, temple, tx 76502"
     ],
     [
       "shana wallace",
@@ -691,6 +745,10 @@
     [
       "shelitac. florence",
       "5202 milky way ave, killeen, tx 76542"
+    ],
+    [
+      "single",
+      "3810 endicott dr, killeen. tx 76549"
     ],
     [
       "surge garraway and kadejiah garraway",

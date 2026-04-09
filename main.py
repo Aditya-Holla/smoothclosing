@@ -136,6 +136,91 @@ def _ingest_travis_csv(input_folder: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Agent-powered downstream pipeline
+# ---------------------------------------------------------------------------
+
+async def _run_agents(enriched_csv: str, logger) -> None:
+    """Delegate skip trace → sheets → SMS to the orchestrator agent."""
+    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+    from agents.orchestrator import build_options
+
+    opts = build_options()
+
+    prompt = (
+        f"I just extracted new foreclosure leads into {enriched_csv}. "
+        f"Please run the full downstream pipeline on ONLY this file:\n"
+        f"1. Skip trace the leads in {enriched_csv} using skipgenie.py "
+        f"(Mode 1 address-first). Output to leads_new_traced.csv\n"
+        f"2. Push the traced leads to the Google Sheet\n"
+        f"3. Send SMS via RingCentral (do a dry-run first, then send for real)\n"
+        f"Do NOT re-trace leads that already have a phone_1 value. "
+        f"Proceed without asking for confirmation — this is an automated pipeline run."
+    )
+
+    logger.info("Delegating to orchestrator agent: skip trace → sheets → SMS")
+    async for message in query(prompt=prompt, options=opts):
+        if isinstance(message, ResultMessage):
+            if message.subtype == "success" and message.result:
+                logger.info(f"Agent result: {message.result[:500]}")
+            elif message.subtype != "success":
+                logger.error(f"Agent error: {message.subtype}")
+                raise RuntimeError(f"Agent failed: {message.subtype}")
+            cost = getattr(message, "total_cost_usd", None)
+            if cost is not None:
+                logger.info(f"Agent cost: ${cost:.4f}")
+
+
+def _run_direct_fallback(enriched_csv: str, valid_records: list, output_csv: str, logger) -> None:
+    """Fallback: run skip trace, sheets, SMS directly if agents are unavailable."""
+    import asyncio
+
+    # Skip trace
+    try:
+        from skipgenie import run as run_skip
+        traced_csv = enriched_csv.replace(".csv", "_traced.csv")
+        logger.info("Running skip trace (direct fallback)...")
+        asyncio.run(run_skip(enriched_csv, traced_csv, headless=True))
+        enriched_csv = traced_csv
+    except Exception as e:
+        logger.warning(f"Skip trace failed ({e}), continuing without phone data.")
+
+    # Sheets push
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
+    if sheet_id:
+        try:
+            from sheets_exporter import export_to_sheets
+            enriched_records = []
+            with open(enriched_csv, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    enriched_records.append(row)
+            new_with_names = [r for r in enriched_records if r.get("owner_name", "").strip()]
+            if new_with_names:
+                export_to_sheets(new_with_names, sheet_id=sheet_id)
+        except Exception as e:
+            logger.error(f"Google Sheets export failed: {e}")
+
+    # SMS
+    rc_ready = all([
+        os.environ.get("RC_CLIENT_ID"),
+        os.environ.get("RC_CLIENT_SECRET"),
+        os.environ.get("RC_JWT_TOKEN"),
+        os.environ.get("RC_FROM_NUMBER"),
+    ])
+    if rc_ready:
+        try:
+            from ringcentral_sms import run as run_sms
+            sms_csv = enriched_csv.replace(".csv", "_sms_sent.csv")
+            run_sms(
+                input_csv=enriched_csv,
+                output_csv=sms_csv,
+                sender_name=os.environ.get("SENDER_NAME", ""),
+            )
+        except Exception as e:
+            logger.warning(f"SMS outreach failed ({e}), continuing.")
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
@@ -191,6 +276,13 @@ def run_pipeline(input_folder: str, output_csv: str) -> None:
     # 5. Clean + validate
     valid_records = clean_records(all_raw_records)
 
+    # 5b. Recover garbage names + missing addresses via Claude vision on source PDFs
+    try:
+        from lead_recovery import recover_leads
+        valid_records = recover_leads(valid_records, pdf_dir=input_folder)
+    except Exception as e:
+        logger.warning(f"Lead recovery failed ({e}), continuing with existing data.")
+
     # 6. Within-run dedup: keep first occurrence of each (owner_name, property_address)
     seen: set = set()
     deduped: list[dict] = []
@@ -228,89 +320,37 @@ def run_pipeline(input_folder: str, output_csv: str) -> None:
     # 8. Export to CSV (base leads for downstream scripts)
     export_to_csv(valid_records, output_csv, append=True)
 
-    # 9. Run downstream enrichment pipeline
-    enriched_csv = output_csv  # start with base leads.csv
+    # 9. Write new-only CSV for downstream agents (skip trace, SMS)
+    new_leads_csv = output_csv.replace(".csv", "_new.csv")
+    with open(new_leads_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=valid_records[0].keys())
+        writer.writeheader()
+        writer.writerows(valid_records)
+    logger.info(f"Wrote {len(valid_records)} new lead(s) to {new_leads_csv}")
+
+    # 10. Run downstream enrichment via agents (skip trace → sheets → SMS)
+    enriched_csv = new_leads_csv
     try:
-        # Equity estimation
+        # Equity estimation (direct call — fast, no LLM needed)
         from equity_estimator import run as run_equity
-        equity_csv = output_csv.replace(".csv", "_with_equity.csv")
+        equity_csv = new_leads_csv.replace(".csv", "_equity.csv")
         logger.info("Running equity estimator...")
-        run_equity(output_csv, equity_csv)
+        run_equity(new_leads_csv, equity_csv)
         enriched_csv = equity_csv
         logger.info(f"  → Equity estimates written to {equity_csv}")
     except Exception as e:
         logger.warning(f"Equity estimator failed ({e}), continuing without equity data.")
 
+    # Delegate to agents for skip trace, sheets push, and SMS
+    import asyncio
     try:
-        # Skip trace (phone numbers)
-        import asyncio
-        from skipgenie import run as run_skip
-        traced_csv = output_csv.replace(".csv", "_traced.csv")
-        logger.info("Running skip trace...")
-        asyncio.run(run_skip(enriched_csv, traced_csv, headless=True))
-        enriched_csv = traced_csv
-        logger.info(f"  → Skip trace results written to {traced_csv}")
+        asyncio.run(_run_agents(enriched_csv, logger))
     except Exception as e:
-        logger.warning(f"Skip trace failed ({e}), continuing without phone data.")
+        logger.error(f"Agent pipeline failed: {e}")
+        logger.info("Falling back to direct script calls...")
+        _run_direct_fallback(enriched_csv, valid_records, output_csv, logger)
 
-    # 10. Read the final enriched CSV and push to Google Sheet
-    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
-    if sheet_id:
-        try:
-            import csv as csv_mod
-            from sheets_exporter import export_to_sheets
-
-            # Read the enriched records
-            enriched_records = []
-            with open(enriched_csv, "r", encoding="utf-8") as f:
-                reader = csv_mod.DictReader(f)
-                for row in reader:
-                    enriched_records.append(row)
-
-            # Only push records that are in our new batch AND have an owner name
-            # (leads without owner names are useless for calling)
-            new_names = {(r["owner_name"].lower(), r["property_address"].lower()) for r in valid_records}
-            new_enriched = [
-                r for r in enriched_records
-                if (r.get("owner_name", "").lower(), r.get("property_address", "").lower()) in new_names
-                and r.get("owner_name", "").strip()  # skip blank owner names
-            ]
-
-            if new_enriched:
-                export_to_sheets(new_enriched, sheet_id=sheet_id)
-            else:
-                logger.info("No leads with owner names to push to Google Sheet.")
-        except Exception as e:
-            logger.error(f"Google Sheets export failed: {e}")
-            logger.info("CSV exports succeeded — enriched CSVs are up to date.")
-    else:
-        logger.info("GOOGLE_SHEET_ID not set — skipping Google Sheets export.")
-        logger.info("Set GOOGLE_SHEET_ID and GOOGLE_SHEETS_CREDS env vars to enable.")
-
-    # 11. SMS outreach to new leads
-    rc_ready = all([
-        os.environ.get("RC_CLIENT_ID"),
-        os.environ.get("RC_CLIENT_SECRET"),
-        os.environ.get("RC_JWT_TOKEN"),
-        os.environ.get("RC_FROM_NUMBER"),
-    ])
-    if rc_ready:
-        try:
-            from ringcentral_sms import run as run_sms
-            sms_csv = enriched_csv.replace(".csv", "_sms_sent.csv")
-            logger.info("Running SMS outreach...")
-            run_sms(
-                input_csv=enriched_csv,
-                output_csv=sms_csv,
-                sender_name=os.environ.get("SENDER_NAME", ""),
-            )
-            logger.info(f"  → SMS results written to {sms_csv}")
-        except Exception as e:
-            logger.warning(f"SMS outreach failed ({e}), continuing.")
-    else:
-        logger.info("RingCentral credentials not set — skipping SMS outreach.")
-
-    # 12. Update state
+    # 11. Update state
     for pdf_path in pdf_paths:
         rel_key = str(pdf_path.relative_to(input_dir))
         count = sum(1 for r in valid_records if r.get("source_file") == pdf_path.name)

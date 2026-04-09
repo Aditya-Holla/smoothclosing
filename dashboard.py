@@ -284,13 +284,24 @@ with tab_dispo:
 
     with col_left:
         trace_limit_d = st.number_input("Max rows to trace", min_value=0, value=0, step=5,
-                                         key="dispo_limit", help="0 = all pending rows")
+                                         key="dispo_limit", help="0 = all pending rows (per tab)")
 
-        if st.button("Trace Buyers", type="primary", key="trace_buyers"):
-            cmd = [PYTHON, "buyer_tracer.py", "--tab", metro]
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            trace_one = st.button("Trace Selected", type="primary", key="trace_buyers")
+        with btn_col2:
+            trace_all = st.button("Trace All Tabs", type="secondary", key="trace_all")
+
+        if trace_one or trace_all:
+            if trace_all:
+                cmd = [PYTHON, "buyer_tracer.py", "--all-tabs"]
+                label = "all tabs"
+            else:
+                cmd = [PYTHON, "buyer_tracer.py", "--tab", metro]
+                label = metro
             if trace_limit_d > 0:
                 cmd.extend(["--limit", str(trace_limit_d)])
-            with st.spinner(f"Tracing {metro} buyers... this takes ~30s per name"):
+            with st.spinner(f"Tracing {label} buyers... this takes ~30s per name"):
                 log_area = st.empty()
                 out = run_script(cmd, log_area)
             if out.returncode == 0:

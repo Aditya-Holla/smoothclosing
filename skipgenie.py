@@ -1112,17 +1112,14 @@ async def search_person(page, name: str, address: str, max_relatives: int = 6) -
         logger.info(f"  Will search {len(to_search)} relatives: "
                      + ", ".join(f"{r['name']} ({r['relationship']})" for r in to_search))
 
-        # ---- Step 6: Click each relative's h6 to get their profile ----
+        # ---- Step 6: Search each relative by NAME (no h6 clicking, no back-nav) ----
         all_rel_names = []
         all_rel_phones = []
 
         for i, rel in enumerate(to_search):
             idx = i + 1  # 1-based output index
-            rel_list_index = rel["index"]  # 0-based index in the h6 list
-            section = "Possible Relatives" if rel["source"] == "relative" else "Possible Associates"
-            logger.info(f"    [{idx}/{len(to_search)}] Clicking relative: {rel['name']} ({rel['relationship']})")
+            logger.info(f"    [{idx}/{len(to_search)}] Searching relative: {rel['name']} ({rel['relationship']})")
 
-            # Check cache first
             rel_parts = rel["name"].split()
             rel_first = rel_parts[0] if rel_parts else rel["name"]
             rel_last = rel_parts[-1] if len(rel_parts) > 1 else ""
@@ -1131,33 +1128,22 @@ async def search_person(page, name: str, address: str, max_relatives: int = 6) -
             if cache_k in _search_cache:
                 logger.info(f"    Cache hit for {rel['name']}")
                 rel_data = _search_cache[cache_k].copy()
-                # Recalculate same_address for this POI
                 if poi_all_addresses and rel_data.get("all_addresses"):
                     rel_data["same_address"] = _check_address_overlap(poi_all_addresses, rel_data["all_addresses"])
                 elif poi_current_addr and rel_data.get("current_address"):
                     rel_data["same_address"] = _addresses_match(rel_data["current_address"], poi_current_addr)
             else:
-                # Click the h6 element
-                profile_loaded = await _click_relative_h6(page, rel_list_index, section)
-
-                if profile_loaded:
-                    rel_data = await _extract_relative_profile(page, poi_all_addresses)
-                    _search_cache[cache_k] = rel_data.copy()
-
-                    # Navigate back to POI for the next relative
-                    if i < len(to_search) - 1:  # don't need to go back after last one
-                        back_ok = await _navigate_back_to_poi(
-                            page, street, city, state, zip_code, first_name, last_name
-                        )
-                        if not back_ok:
-                            logger.warning(f"  Could not navigate back to POI after relative {rel['name']}")
-                            # Still record what we got, but can't click more relatives
-                            _populate_relative_result(result, idx, rel, rel_data, all_rel_names, all_rel_phones)
-                            break
-                else:
-                    rel_data = {"phones": [], "current_address": "", "all_addresses": [],
-                                "is_deceased": False, "same_address": False}
-                    _search_cache[cache_k] = rel_data.copy()
+                # Search relative by name (1 credit) — no back-navigation needed
+                rel_data = {"phones": [], "current_address": "", "all_addresses": [],
+                            "is_deceased": False, "same_address": False}
+                if rel_last:
+                    try:
+                        rel_found = await _execute_search(page, rel_first, rel_last, state=state)
+                        if rel_found:
+                            rel_data = await _extract_relative_profile(page, poi_all_addresses)
+                    except (PWTimeout, Exception) as e:
+                        logger.warning(f"    Name search failed for {rel['name']}: {e}")
+                _search_cache[cache_k] = rel_data.copy()
 
             # Refine relationship with address overlap data
             if rel_data.get("all_addresses"):
@@ -1268,13 +1254,25 @@ async def run(input_csv: str, output_csv: str, headless: bool = True,
 
         await login(page, username, password)
 
+        skipped = 0
         for i, rec in enumerate(records, 1):
             name = rec.get("owner_name", "").strip()
             address = rec.get("property_address", "").strip()
+
+            # Skip leads that already have phone data from a previous run
+            if rec.get("phone_1", "").strip():
+                logger.info(f"[{i}/{len(records)}] Already traced (has phone_1), skipping: {name or '(no name)'}")
+                enriched.append(rec)
+                skipped += 1
+                continue
+
             logger.info(f"[{i}/{len(records)}] Searching: {name or '(no name)'} — {address}")
 
             skip_data = await search_person(page, name, address, max_relatives=max_relatives)
             enriched.append({**rec, **skip_data})
+
+        if skipped:
+            logger.info(f"Skipped {skipped} already-traced lead(s).")
 
         await page.wait_for_timeout(2_000)
         await context.close()

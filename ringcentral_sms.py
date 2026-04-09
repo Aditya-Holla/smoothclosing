@@ -87,10 +87,16 @@ def send_sms(access_token: str, from_number: str, to_number: str, text: str) -> 
 
 TEMPLATES = [
     "Hey, I'm guessing you already have it handled but I wanted to reach out and see if anyone has taken the time to go over some ways to get the auction stopped on {street}?",
-    "Hey, quick question\u2014who would be the right person to talk to about {street}? I see the lender has set a sale date and wanted to understand the plan. \u2013 Vince",
+    "Hey, quick question\u2014who would be the right person to talk to about {street}? I see the lender has set a sale date and wanted to understand the plan. \u2013 Zaman",
     "Hey, I noticed that the lender is giving you a hard time on {street}. I just wanted to reach out and see if you needed another option?",
-    "Hi, I may have some ideas to stop the auction on {street}. Would it be worth a quick conversation? \u2013 Vince",
+    "Hi, I may have some ideas to stop the auction on {street}. Would it be worth a quick conversation? \u2013 Zaman",
 ]
+
+NO_PROPERTY_TEMPLATE = (
+    "Hey {owner_first}, I'm guessing you already have it handled but I wanted "
+    "to reach out and see if anyone has taken the time to go over some ways to "
+    "get the auction on your property stopped. -Zaman"
+)
 
 # Legacy default kept for --template file override
 DEFAULT_TEMPLATE = (
@@ -172,8 +178,22 @@ def run(
     for rec in records:
         owner   = rec.get("owner_name", "Unknown")
         address = rec.get("property_address", "")
-        # Use rotating templates unless a custom template file was provided
-        active_template = pick_template() if template is None else template
+        # Skip leads with no usable name — can't send a personalized text
+        notes = rec.get("notes", "")
+        if "name unreadable" in notes.lower() or not owner.strip():
+            rec["sms_status"] = "skipped"
+            rec["sms_error"] = "name unreadable — needs manual review"
+            logger.warning(f"  Skipping {owner or '(no name)'} — name unreadable, can't personalize text")
+            results.append(rec)
+            continue
+
+        # Use no-property template if address is missing, otherwise rotate
+        if template is not None:
+            active_template = template
+        elif not address.strip():
+            active_template = NO_PROPERTY_TEMPLATE
+        else:
+            active_template = pick_template()
         message = render_message(active_template, rec, sender_name)
         rec["sms_template"] = active_template[:60] + "…"
 

@@ -363,27 +363,88 @@ def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = 
 
 # ── Main ───────────────────────────────────────────────────────────
 
-def run(limit: int = None, headless: bool = False, sheet_id: str = None, tab: str = None):
-    """Main entry point: read sheet, trace names, write back results."""
-    ws = get_worksheet(sheet_id, tab)
-    tab_name = tab or ws.title
+def _trace_tab(page, ws, tab_name: str, limit: int = None) -> int:
+    """Trace all pending rows in a single worksheet. Returns number of rows traced."""
     pending = get_pending_rows(ws)
 
     if not pending:
         logger.info("No pending rows in '%s' (all have phones or no names).", tab_name)
-        return
+        return 0
 
     if limit:
         pending = pending[:limit]
 
     total_names = sum(len(r["names"]) for r in pending)
     logger.info(
-        "Found %d rows with %d total names to trace (%d Skip Genie credits)",
-        len(pending), total_names, total_names,
+        "[%s] %d rows with %d total names to trace (%d Skip Genie credits)",
+        tab_name, len(pending), total_names, total_names,
     )
+
+    for row_idx, row in enumerate(pending, 1):
+        logger.info(
+            "[%s] [%d/%d] Row %d — %s — Names: %s",
+            tab_name, row_idx, len(pending), row["row_num"],
+            row["llc_name"], ", ".join(row["names"]),
+        )
+
+        phone_parts = []
+        emails = []
+        first_address = {"street": "", "city": "", "state": "", "zip": ""}
+
+        for name in row["names"]:
+            logger.info("  Tracing: %s", name)
+            result = search_name(page, name)
+
+            if result["phone"]:
+                phone_parts.append(f"{name} {result['phone']}")
+                logger.info("    Phone: %s", result["phone"])
+            else:
+                phone_parts.append(f"{name} (no phone)")
+                logger.info("    No phone found")
+
+            if result["email"]:
+                emails.append(result["email"])
+                logger.info("    Email: %s", result["email"])
+
+            if not first_address["street"] and result["address"]:
+                first_address = {
+                    "street": result["address"],
+                    "city": result["city"],
+                    "state": result["state"],
+                    "zip": result["zip"],
+                }
+
+            time.sleep(1)
+
+        phones_str = "; ".join(phone_parts)
+        email_str = "; ".join(emails)
+        logger.info("  Result: %s", phones_str)
+
+        write_result(ws, row["row_num"], phones_str, first_address, email_str)
+        logger.info("  Written to '%s' row %d", tab_name, row["row_num"])
+
+    return len(pending)
+
+
+def run(limit: int = None, headless: bool = False, sheet_id: str = None,
+        tab: str = None, all_tabs: bool = False):
+    """Main entry point: read sheet, trace names, write back results."""
+    from sheets_exporter import _get_client
 
     email = os.getenv("SKIPGENIE_EMAIL", "")
     password = os.getenv("SKIPGENIE_PASSWORD", "")
+
+    # Determine which tabs to process
+    if all_tabs:
+        client = _get_client()
+        sid = sheet_id or DISPOSITIONS_SHEET_ID
+        sheet = client.open_by_key(sid)
+        tabs_to_run = [(ws, ws.title) for ws in sheet.worksheets()]
+        logger.info("Running all %d tabs: %s", len(tabs_to_run),
+                     ", ".join(t[1] for t in tabs_to_run))
+    else:
+        ws = get_worksheet(sheet_id, tab)
+        tabs_to_run = [(ws, tab or ws.title)]
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
@@ -398,53 +459,14 @@ def run(limit: int = None, headless: bool = False, sheet_id: str = None, tab: st
             context.close()
             return
 
-        for row_idx, row in enumerate(pending, 1):
-            logger.info(
-                "[%d/%d] Row %d — %s — Names: %s",
-                row_idx, len(pending), row["row_num"],
-                row["llc_name"], ", ".join(row["names"]),
-            )
-
-            phone_parts = []
-            emails = []
-            first_address = {"street": "", "city": "", "state": "", "zip": ""}
-
-            for name in row["names"]:
-                logger.info("  Tracing: %s", name)
-                result = search_name(page, name)
-
-                if result["phone"]:
-                    phone_parts.append(f"{name} {result['phone']}")
-                    logger.info("    Phone: %s", result["phone"])
-                else:
-                    phone_parts.append(f"{name} (no phone)")
-                    logger.info("    No phone found")
-
-                if result["email"]:
-                    emails.append(result["email"])
-                    logger.info("    Email: %s", result["email"])
-
-                # Use first address found
-                if not first_address["street"] and result["address"]:
-                    first_address = {
-                        "street": result["address"],
-                        "city": result["city"],
-                        "state": result["state"],
-                        "zip": result["zip"],
-                    }
-
-                time.sleep(1)
-
-            phones_str = "; ".join(phone_parts)
-            email_str = "; ".join(emails)
-            logger.info("  Result: %s", phones_str)
-
-            write_result(ws, row["row_num"], phones_str, first_address, email_str)
-            logger.info("  Written to '%s' row %d", tab_name, row["row_num"])
+        total_traced = 0
+        for ws, tab_name in tabs_to_run:
+            traced = _trace_tab(page, ws, tab_name, limit=limit)
+            total_traced += traced
 
         context.close()
 
-    logger.info("Done. Traced %d rows.", len(pending))
+    logger.info("Done. Traced %d rows across %d tab(s).", total_traced, len(tabs_to_run))
 
 
 def list_tabs(sheet_id: str = None):
@@ -481,6 +503,10 @@ def main():
         help="Run browser headlessly (true/false, default: false)",
     )
     parser.add_argument(
+        "--all-tabs", action="store_true",
+        help="Process ALL tabs in the sheet (one browser session, tabs run sequentially).",
+    )
+    parser.add_argument(
         "--list-tabs", action="store_true",
         help="List available tabs and exit.",
     )
@@ -498,7 +524,8 @@ def main():
         return
 
     headless = args.headless.lower() == "true"
-    run(limit=args.limit, headless=headless, sheet_id=args.sheet_id, tab=args.tab)
+    run(limit=args.limit, headless=headless, sheet_id=args.sheet_id,
+        tab=args.tab, all_tabs=args.all_tabs)
 
 
 if __name__ == "__main__":
