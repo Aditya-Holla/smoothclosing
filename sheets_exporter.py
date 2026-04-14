@@ -292,6 +292,74 @@ def _add_dropdowns(worksheet, start_row: int, end_row: int):
     worksheet.spreadsheet.batch_update({"requests": requests})
 
 
+def records_to_sheet_rows(records: list[dict]) -> list[list]:
+    """Expand pipeline records into sheet-style rows.
+
+    Each lead becomes 1 owner row + up to 6 relative rows underneath.
+    Each row is a list of length NUM_COLS matching HEADER_ROW exactly,
+    so callers can zip with HEADER_ROW to build a DataFrame.
+
+    No dedup here, no network calls — safe to use for display anywhere
+    (dashboard, CLI reports, etc). `export_to_sheets` below reuses this
+    for the actual push to Google.
+    """
+    rows = []
+    for record in records:
+        prop_street, prop_city, prop_state, prop_zip = _parse_address(
+            record.get("property_address", "")
+        )
+        mail_street, mail_city, mail_state, mail_zip = _parse_address(
+            record.get("mailing_address", "")
+        )
+        owner_name = _clean_val(record.get("owner_name", ""))
+        lender = _clean_val(record.get("lender", ""))
+
+        # Owner row (all columns filled)
+        owner_row = [
+            _normalize_date(record.get("filing_date", "")),        # Date Posted
+            owner_name,                                             # Name
+            prop_street,                                            # Property Address
+            prop_city,                                              # Property City
+            prop_state,                                             # Property State
+            prop_zip,                                               # Property Zip
+            mail_street,                                            # Mailing Address
+            lender,                                                 # Lender
+            "",                                                     # Active
+            "",                                                     # In Crm
+            _clean_val(record.get("origination_year", "")),         # Loan Secured
+            _format_dollar(record.get("loan_amount", "")),          # Loan Amount
+            _clean_val(record.get("estimated_home_value", "")),     # Estimated Value
+            _clean_val(record.get("estimated_equity", "")),         # Estimated Equity
+            _clean_val(record.get("equity_note", "")),              # Equity Note
+            "",                                                     # Remarks
+            owner_name,                                             # Name (traced)
+            _clean_phone(record.get("phone_1", "")),                # Phone Number
+            "",                                                     # Relationship
+            "",                                                     # Call Status
+        ]
+        rows.append(owner_row)
+
+        # Relative rows underneath
+        for ri in range(1, 7):
+            rel_name = _clean_val(record.get(f"rel_{ri}_name", ""))
+            rel_phone = _clean_phone(record.get(f"rel_{ri}_phone_1", ""))
+            if not rel_name and not rel_phone:
+                continue
+            rel_relationship = _clean_val(record.get(f"rel_{ri}_relationship", ""))
+            rel_same_addr = _clean_val(record.get(f"rel_{ri}_same_address", ""))
+            label = rel_relationship if rel_relationship else "Relative"
+            if rel_same_addr.lower() in ("yes", "true", "1"):
+                label += " (same addr)"
+
+            rel_row = [""] * NUM_COLS
+            rel_row[HEADER_ROW.index("Name", 2)] = rel_name
+            rel_row[HEADER_ROW.index("Phone Number")] = rel_phone
+            rel_row[HEADER_ROW.index("Relationship")] = label
+            rows.append(rel_row)
+
+    return rows
+
+
 def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: str = None) -> int:
     """
     Append enriched leads to the Google Sheet.
@@ -329,14 +397,10 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
     existing_keys = _get_existing_keys(worksheet)
     logger.info(f"Sheets: {len(existing_keys)} existing leads in sheet.")
 
-    # Filter to truly new records
-    rows_to_add = []
-    leads_appended = 0
+    # Filter to truly new records (dedup by owner + street against existing sheet)
+    truly_new = []
     for record in new_records:
-        # Dedup key uses name + street (what's stored in sheet cols B and C)
-        prop_street, prop_city, prop_state, prop_zip = _parse_address(
-            record.get("property_address", "")
-        )
+        prop_street, *_ = _parse_address(record.get("property_address", ""))
         key = (
             record.get("owner_name", "").strip().lower(),
             prop_street.strip().lower(),
@@ -344,59 +408,12 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
         if key in existing_keys:
             continue
         existing_keys.add(key)  # prevent within-batch dupes
-        leads_appended += 1
+        truly_new.append(record)
 
-        mail_street, mail_city, mail_state, mail_zip = _parse_address(
-            record.get("mailing_address", "")
-        )
-
-        # Clean nan values
-        owner_name = _clean_val(record.get("owner_name", ""))
-        lender = _clean_val(record.get("lender", ""))
-
-        # Owner row (all columns filled)
-        row = [
-            _normalize_date(record.get("filing_date", "")),   # Date Posted
-            owner_name,                                        # Name
-            prop_street,                                       # Property Address
-            prop_city,                                         # Property City
-            prop_state,                                        # Property State
-            prop_zip,                                          # Property Zip
-            mail_street,                                       # Mailing Address
-            lender,                                            # Lender
-            "",                                                # Active
-            "",                                                # In Crm
-            _clean_val(record.get("origination_year", "")),       # Loan Secured
-            _format_dollar(record.get("loan_amount", "")),           # Loan Amount
-            _clean_val(record.get("estimated_home_value", "")),   # Estimated Value
-            _clean_val(record.get("estimated_equity", "")),       # Estimated Equity
-            _clean_val(record.get("equity_note", "")),            # Equity Note
-            "",                                                # Remarks
-            owner_name,                                        # Name (traced)
-            _clean_phone(record.get("phone_1", "")),           # Phone Number
-            "",                                                # Relationship
-            "",                                                # Call Status (dropdown)
-        ]
-        rows_to_add.append(row)
-
-        # Relative rows underneath — name, phone, and relationship right next to each other
-        for ri in range(1, 7):
-            rel_name = _clean_val(record.get(f"rel_{ri}_name", ""))
-            rel_phone = _clean_phone(record.get(f"rel_{ri}_phone_1", ""))
-            if not rel_name and not rel_phone:
-                continue
-            rel_relationship = _clean_val(record.get(f"rel_{ri}_relationship", ""))
-            rel_same_addr = _clean_val(record.get(f"rel_{ri}_same_address", ""))
-            label = rel_relationship if rel_relationship else "Relative"
-            if rel_same_addr.lower() in ("yes", "true", "1"):
-                label += " (same addr)"
-
-            # U (Name) + V (Phone) + W (Relationship) — use header index for safety
-            rel_row = [""] * NUM_COLS
-            rel_row[HEADER_ROW.index("Name", 2)] = rel_name       # Name (2nd occurrence)
-            rel_row[HEADER_ROW.index("Phone Number")] = rel_phone  # V: Phone Number
-            rel_row[HEADER_ROW.index("Relationship")] = label      # W: Relationship
-            rows_to_add.append(rel_row)
+    leads_appended = len(truly_new)
+    # Expand to sheet-style rows (owner row + relative rows underneath).
+    # Same helper the dashboard uses to preview what's about to be pushed.
+    rows_to_add = records_to_sheet_rows(truly_new)
 
     if not rows_to_add:
         logger.info("Sheets: all records already in sheet, nothing to append.")

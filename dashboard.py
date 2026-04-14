@@ -345,7 +345,65 @@ export_to_sheets(records)
     ]
     shown = False
     for csv_name, label in preview_candidates:
-        if Path(csv_name).exists():
+        if not Path(csv_name).exists():
+            continue
+        # Render in Google Sheet format: 1 owner row + relative rows beneath,
+        # with Call Status populated from sms_history.csv so you can see at
+        # a glance who's been texted. Matches what ends up in the sheet.
+        try:
+            import csv as _csv, re as _re
+            from sheets_exporter import records_to_sheet_rows, HEADER_ROW
+
+            with open(csv_name, encoding="utf-8") as f:
+                records = list(_csv.DictReader(f))
+
+            # Build phone -> sent_at lookup from sms_history for Call Status
+            def _norm(p):
+                d = _re.sub(r"\D", "", p or "")
+                return d[-10:] if len(d) >= 10 else d
+            sent_lookup = {}
+            if Path("sms_history.csv").exists():
+                with open("sms_history.csv", encoding="utf-8") as hf:
+                    for hr in _csv.DictReader(hf):
+                        np = _norm(hr.get("phone_number", ""))
+                        if np:
+                            sent_lookup[np] = hr.get("sent_at", "")[:10]
+
+            rows = records_to_sheet_rows(records)
+            phone_idx = HEADER_ROW.index("Phone Number")
+            cs_idx = HEADER_ROW.index("Call Status")
+            for row in rows:
+                ph = row[phone_idx] if phone_idx < len(row) else ""
+                if ph and not row[cs_idx]:
+                    np = _norm(ph)
+                    if np in sent_lookup:
+                        row[cs_idx] = f"Texted {sent_lookup[np]}"
+
+            df = pd.DataFrame(rows, columns=HEADER_ROW)
+            owners_count = len(records)
+            st.write(f"**{csv_name}** - {label} - {owners_count} lead(s), {len(rows)} total rows (owner + relatives)")
+            st.dataframe(df, use_container_width=True, height=400)
+            # Download keeps the raw internal format in case anything downstream
+            # needs the full pipeline columns (phone_1, rel_1_name, etc).
+            raw_df = pd.read_csv(csv_name)
+            st.download_button(
+                f"Download {csv_name} (raw)",
+                data=raw_df.to_csv(index=False).encode("utf-8"),
+                file_name=csv_name,
+                mime="text/csv",
+            )
+            st.download_button(
+                f"Download sheet-style view",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name=csv_name.replace(".csv", "_sheet_view.csv"),
+                mime="text/csv",
+                key=f"dl_sheet_{csv_name}",
+            )
+            shown = True
+            break
+        except Exception as e:
+            # Fall back to raw CSV view if the sheet-style conversion breaks
+            st.warning(f"Sheet-style render failed ({e}) — showing raw CSV.")
             df = pd.read_csv(csv_name)
             st.write(f"**{csv_name}** - {label} - {len(df)} row(s)")
             st.dataframe(df, use_container_width=True, height=400)
@@ -382,6 +440,16 @@ with tab_dispo:
         trace_limit_d = st.number_input("Max rows to trace", min_value=0, value=0, step=5,
                                          key="dispo_limit", help="0 = all pending rows (per tab)")
 
+        retrace_all = st.checkbox(
+            "Retrace every row (overwrites existing data)",
+            value=False,
+            key="dispo_retrace_all",
+            help="When OFF (default): only processes rows where Phones is empty. "
+                 "When ON: re-runs on EVERY row with a name, overwriting existing "
+                 "Phones / Mailing / Email cells with fresh Skip Genie results. "
+                 "Useful after upgrading the search logic.",
+        )
+
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             trace_one = st.button("Trace Selected", type="primary", key="trace_buyers")
@@ -397,9 +465,14 @@ with tab_dispo:
                 label = metro
             if trace_limit_d > 0:
                 cmd.extend(["--limit", str(trace_limit_d)])
+            if retrace_all:
+                cmd.append("--retrace-all")
+                st.caption(f":warning: Retrace-all is ON. Existing Phones/Mailing/Email in {label} will be OVERWRITTEN.")
+            # Skip trace can take a while with lots of rows + relatives.
+            # Give it 2 hours since retrace-all touches everyone.
             with st.spinner(f"Tracing {label} buyers... this takes ~30s per name"):
                 log_area = st.empty()
-                out = run_script(cmd, log_area)
+                out = run_script(cmd, log_area, timeout=2 * 60 * 60)
             if out.returncode == 0:
                 st.success(f"Done — check the Dispositions sheet")
             else:

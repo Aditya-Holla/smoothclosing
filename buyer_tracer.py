@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_DIR = os.path.join(SCRIPT_DIR, ".skipgenie_session")
 
-# Column layout (1-indexed)
+# Column layout — positions are DERIVED from each tab's header row at
+# runtime (see _build_col_map). The constants below are DEFAULTS used
+# only if a header isn't found, and are kept so existing call sites
+# that reference COL_* still compile. Never hardcode column letters
+# like "I", "J", "O" etc — always go through _build_col_map so the
+# code survives column reordering by the team.
 COL_DATE = 1
 COL_LLC_NAME = 2
 COL_NAME1 = 3
@@ -43,6 +48,58 @@ COL_ZIP = 13
 COL_PROPERTY_ADDR = 14
 COL_EMAIL = 15
 COL_POSSIBLE_INFO = 16
+
+# Map from our internal canonical name -> a list of header strings that
+# the team might use for that column. Case/whitespace-insensitive match.
+# When you add a new column to the sheet, add an entry here.
+HEADER_ALIASES = {
+    "date":            ["Date"],
+    "llc_name":        ["LLC Name"],
+    "name1":           ["Name 1"],
+    "name2":           ["Name 2"],
+    "name3":           ["Name 3"],
+    "name4":           ["Name 4"],
+    "entity":          ["Entity"],
+    "county":          ["County"],
+    "phones":          ["Phones", "Phone", "Phone Numbers"],
+    "mail_street":     ["Mailing Street", "Mail Street"],
+    "mail_city":       ["Mailing City", "Mail City"],
+    "state":           ["State", "Mailing State"],
+    "zip":             ["Zip", "Mailing Zip", "ZIP"],
+    "property_addr":   ["Property Address"],
+    "property_city":   ["Property City"],
+    "email":           ["Email", "E-mail"],
+    "possible_info":   ["Possible Info", "Notes"],
+}
+
+
+def _col_letter(n: int) -> str:
+    """1-indexed column number -> Excel letter (1=A, 27=AA)."""
+    result = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        result = chr(65 + r) + result
+    return result
+
+
+def _build_col_map(ws) -> dict:
+    """Read the worksheet's header row and return {canonical_name: 1-based_col}.
+
+    Called once per tab so each tab can have its own layout. If a canonical
+    name isn't found in this tab's header, it's simply absent from the map
+    and callers should handle that (e.g. skip writing that field).
+    """
+    header = ws.row_values(1)
+    # Build lowercase->position lookup once
+    lower_to_pos = {h.strip().lower(): i + 1 for i, h in enumerate(header) if h.strip()}
+    col_map = {}
+    for canonical, aliases in HEADER_ALIASES.items():
+        for alias in aliases:
+            pos = lower_to_pos.get(alias.strip().lower())
+            if pos:
+                col_map[canonical] = pos
+                break
+    return col_map
 
 
 # ── Skip Genie Browser Automation ──────────────────────────────────
@@ -263,6 +320,198 @@ def search_name(page, full_name: str) -> dict:
     return result
 
 
+def _react_fill_sync(page, selector: str, value: str) -> bool:
+    """Fill a React-controlled <input> by triggering synthetic events.
+
+    Skip Genie is a React app — plain page.type() / .fill() changes the
+    DOM value but does NOT fire React's onChange, so the form looks empty
+    and the search button stays disabled. This sets the value via the
+    native HTMLInputElement setter, then dispatches 'input' and 'change'
+    events that React listens for.
+
+    Sync equivalent of skipgenie.py::_react_fill (async).
+    Returns True if the input was found and value set; False otherwise.
+    """
+    if not value:
+        return True  # nothing to fill, treat as success
+    js = """
+        ([sel, val]) => {
+            const el = document.querySelector(sel);
+            if (!el) return false;
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value'
+            ).set;
+            nativeSetter.call(el, val);
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
+    """
+    try:
+        return bool(page.evaluate(js, [selector, value]))
+    except Exception as e:
+        logger.debug("  react_fill failed for %s: %s", selector, e)
+        return False
+
+
+def search_address(page, street: str, city: str = "", state: str = "TX", zip_code: str = "") -> dict:
+    """Search Skip Genie by mailing address. Returns {phone, email, address, city, state, zip}.
+
+    Used before search_name so a row with a known mailing address gets
+    resolved via Skip Genie's more precise Address Search tab first.
+    Returns empty result if no street given or no match found.
+    """
+    result = {"phone": "", "email": "", "address": "", "city": "", "state": "", "zip": ""}
+
+    if not street or not street.strip():
+        return result
+
+    page.goto("https://web.skipgenie.com/user/search")
+    page.wait_for_load_state("networkidle")
+    time.sleep(1.5)
+
+    # Click "Address Search" tab. Skip Genie renders it as <li class="tabs">
+    # or similar — try a few selectors so we're resilient to minor UI changes.
+    clicked = False
+    for selector in [
+        'li.tabs:has-text("Address")',
+        'li:has-text("Address Search")',
+        'a:has-text("Address Search")',
+        'button:has-text("Address Search")',
+        'button:has-text("Address")',
+    ]:
+        try:
+            loc = page.locator(selector).first
+            if loc.is_visible(timeout=2000):
+                loc.click(timeout=2000)
+                clicked = True
+                logger.info("  Clicked Address Search tab via: %s", selector)
+                break
+        except Exception:
+            continue
+    if not clicked:
+        logger.warning("  Could not find Address Search tab; aborting address search")
+        return result
+
+    time.sleep(1)
+
+    # React-aware fill. Placeholders match what skipgenie.py (the working
+    # async version) uses — case-insensitive partial match on 'Street Address',
+    # 'City', 'State', 'Zip' / 'Postal'.
+    ok = True
+    if street:
+        ok &= _react_fill_sync(page, 'input[placeholder*="Street Address" i]', street.strip())
+    if city:
+        ok &= _react_fill_sync(page, 'input[placeholder*="City" i]', city.strip())
+    if state:
+        # State on address search shares a placeholder with name search's State
+        ok &= _react_fill_sync(page, 'input[placeholder*="State" i]', state.strip())
+    if zip_code:
+        # Try Zip first, fall back to Postal (some forms use either)
+        if not _react_fill_sync(page, 'input[placeholder*="Zip" i]', zip_code.strip()):
+            _react_fill_sync(page, 'input[placeholder*="Postal" i]', zip_code.strip())
+
+    if not ok:
+        logger.warning("  Could not fill one or more address fields; aborting")
+        return result
+
+    # Give React a moment to process onChange handlers
+    time.sleep(0.5)
+
+    time.sleep(1)
+
+    # Click GET INFO (same pattern as search_name)
+    try:
+        for btn in page.locator("button:has-text('GET INFO'), button:has-text('Get Info')").all():
+            if btn.is_visible():
+                btn.click(force=True)
+                break
+    except Exception as e:
+        logger.warning("  Could not click GET INFO for address search: %s", e)
+        return result
+
+    time.sleep(3)
+
+    # Confirm search
+    confirmed = False
+    for selector in [
+        "button:has-text('Yes, Execute Search')",
+        "button:has-text('YES, EXECUTE SEARCH')",
+        "button:has-text('Execute Search')",
+        "text=Yes, Execute Search",
+    ]:
+        try:
+            loc = page.locator(selector).first
+            if loc.is_visible(timeout=3000):
+                loc.click(timeout=3000)
+                confirmed = True
+                break
+        except Exception:
+            continue
+    if not confirmed:
+        try:
+            for btn in page.locator("button").all():
+                if "execute" in btn.inner_text().strip().lower() and btn.is_visible():
+                    btn.click()
+                    confirmed = True
+                    break
+        except Exception:
+            pass
+
+    if not confirmed:
+        logger.info("  No results / no confirmation for address: %s", street)
+        return result
+
+    time.sleep(5)
+
+    try:
+        page_text = page.inner_text("body")
+    except Exception:
+        return result
+
+    if "Property Details" not in page_text and "Result :" not in page_text:
+        logger.info("  No results for address: %s", street)
+        return result
+
+    # Parse results (same pattern as search_name)
+    phone_match = re.search(r'\((\d{3})\)\s*(\d{3})-(\d{4})', page_text)
+    if phone_match:
+        result["phone"] = f"({phone_match.group(1)}) {phone_match.group(2)}-{phone_match.group(3)}"
+
+    for email_match in re.finditer(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', page_text, re.IGNORECASE):
+        email = email_match.group(0)
+        if "webuyanything" not in email.lower() and "skipgenie" not in email.lower():
+            result["email"] = email
+            break
+
+    # Address already known (we used it for search), but capture the first
+    # Address History entry in case Skip Genie canonicalizes/formats it.
+    lines = page_text.split('\n')
+    in_addr = False
+    for line in lines:
+        line = line.strip()
+        if 'Address History' in line:
+            in_addr = True
+            continue
+        if in_addr and line.startswith('Possible'):
+            break
+        if in_addr and re.match(r'\d+\s+', line):
+            addr_parts = parse_address(line)
+            result["address"] = addr_parts["street"]
+            result["city"] = addr_parts["city"]
+            result["state"] = addr_parts["state"]
+            result["zip"] = addr_parts["zip"]
+            break
+
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    time.sleep(1)
+
+    return result
+
+
 def parse_address(addr_line: str) -> dict:
     """Parse Skip Genie address like '1148 RUSTY BLACKHAW TRL SAN MARCOS TX 78666 HAYS'.
 
@@ -326,46 +575,131 @@ def get_worksheet(sheet_id: str = None, tab: str = None):
     return sheet.sheet1
 
 
-def get_pending_rows(ws) -> list[dict]:
-    """Get rows from Sheet3 where Phones column is empty and at least one name exists."""
+def get_pending_rows(ws, include_traced: bool = False) -> list[dict]:
+    """Rows to process. Default: Phones empty + at least one name.
+
+    Args:
+        include_traced: If True, also include rows that already have a
+            Phones value. Used by --retrace-all to force a re-run across
+            every row (will overwrite existing Phones/Mailing/Email).
+
+    Also captures existing Mailing Street/City/State/Zip if the row has
+    them pre-filled — _trace_tab uses those to do an Address Search
+    BEFORE falling back to Name Search. Uses the tab's own header to
+    locate columns so different tab layouts all work.
+    """
+    col_map = _build_col_map(ws)
     all_data = ws.get_all_values()
     rows = []
+    name_cols = [col_map.get(k) for k in ("name1", "name2", "name3", "name4")]
+    name_cols = [c for c in name_cols if c]
+    phones_col = col_map.get("phones")
+    llc_col = col_map.get("llc_name")
+    mail_street_col = col_map.get("mail_street")
+    mail_city_col = col_map.get("mail_city")
+    state_col = col_map.get("state")
+    zip_col = col_map.get("zip")
+    if not phones_col or not name_cols:
+        logger.warning(
+            f"Tab '{ws.title}' is missing required columns (phones/names). "
+            f"Header: {all_data[0] if all_data else '(empty)'}"
+        )
+        return []
+    max_col = max(
+        [phones_col, llc_col or 0, mail_street_col or 0, mail_city_col or 0,
+         state_col or 0, zip_col or 0] + name_cols
+    )
+
+    def _cell(row, col):
+        return row[col - 1].strip() if col and col - 1 < len(row) else ""
+
     for i, row in enumerate(all_data[1:], 2):  # skip header, 1-indexed
-        # Pad row to 16 columns
-        while len(row) < 16:
+        while len(row) < max_col:
             row.append("")
-
-        phones = row[COL_PHONES - 1].strip()
-        names = [row[c - 1].strip() for c in [COL_NAME1, COL_NAME2, COL_NAME3, COL_NAME4] if row[c - 1].strip()]
-
-        if not phones and names:
-            rows.append({
-                "row_num": i,
-                "names": names,
-                "llc_name": row[COL_LLC_NAME - 1],
-            })
+        phones = _cell(row, phones_col)
+        names = [row[c - 1].strip() for c in name_cols if row[c - 1].strip()]
+        if not names:
+            continue
+        # Default: only rows with empty Phones. With include_traced=True
+        # we retrace everyone who has a name.
+        if phones and not include_traced:
+            continue
+        rows.append({
+            "row_num": i,
+            "names": names,
+            "llc_name": _cell(row, llc_col),
+            "mail_street": _cell(row, mail_street_col),
+            "mail_city":   _cell(row, mail_city_col),
+            "state":       _cell(row, state_col),
+            "zip":         _cell(row, zip_col),
+            "had_phones":  bool(phones),  # for logging
+        })
     return rows
 
 
-def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = ""):
-    """Write trace results back to the sheet."""
+def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = "", col_map: dict = None):
+    """Write trace results back to the sheet using this tab's header layout.
+
+    Pass col_map to avoid re-reading the header on every write (caller
+    should build it once per tab). Writes to whichever columns exist in
+    this tab — if "email" column is absent, email is silently skipped.
+    """
     from gspread.utils import ValueInputOption
-    updates = [
-        {"range": f"I{row_num}", "values": [[phones_str]]},
-        {"range": f"J{row_num}", "values": [[address.get("street", "")]]},
-        {"range": f"K{row_num}", "values": [[address.get("city", "")]]},
-        {"range": f"L{row_num}", "values": [[address.get("state", "")]]},
-        {"range": f"M{row_num}", "values": [[address.get("zip", "")]]},
-        {"range": f"O{row_num}", "values": [[email]]},
-    ]
+
+    if col_map is None:
+        col_map = _build_col_map(ws)
+
+    updates = []
+
+    def _add(canonical: str, value: str):
+        col = col_map.get(canonical)
+        if not col:
+            logger.debug(f"  Skip {canonical} (no column in tab '{ws.title}')")
+            return
+        letter = _col_letter(col)
+        updates.append({"range": f"{letter}{row_num}", "values": [[value]]})
+
+    _add("phones",      phones_str)
+    _add("mail_street", address.get("street", ""))
+    _add("mail_city",   address.get("city", ""))
+    _add("state",       address.get("state", ""))
+    _add("zip",         address.get("zip", ""))
+    _add("email",       email)
+
+    if not updates:
+        logger.warning(f"  Nothing to write for row {row_num} in '{ws.title}' (no matching columns).")
+        return
     ws.batch_update(updates, value_input_option=ValueInputOption.raw)
 
 
 # ── Main ───────────────────────────────────────────────────────────
 
-def _trace_tab(page, ws, tab_name: str, limit: int = None) -> int:
-    """Trace all pending rows in a single worksheet. Returns number of rows traced."""
-    pending = get_pending_rows(ws)
+def _trace_tab(page, ws, tab_name: str, limit: int = None, retrace_all: bool = False) -> int:
+    """Trace pending rows in a single worksheet. Returns number of rows traced.
+
+    retrace_all=True forces re-processing of every row with names, even
+    ones that already have Phones filled in — the Phones/Mailing/Email
+    cells will be overwritten with the new search results.
+    """
+    pending = get_pending_rows(ws, include_traced=retrace_all)
+    if retrace_all:
+        already_had = sum(1 for r in pending if r.get("had_phones"))
+        logger.info(
+            "[%s] retrace_all=True: processing %d rows (%d already had phones, will be OVERWRITTEN)",
+            tab_name, len(pending), already_had,
+        )
+
+    # Build column map once for this tab — reused on every write below.
+    # Different tabs can have different layouts (Austin Metro has a
+    # "Property City" column that the others don't).
+    col_map = _build_col_map(ws)
+    expected = {"phones", "mail_street", "mail_city", "state", "zip", "email"}
+    missing = expected - set(col_map.keys())
+    if missing:
+        logger.warning(
+            "[%s] Header is missing expected columns: %s. Those fields will be skipped.",
+            tab_name, sorted(missing),
+        )
 
     if not pending:
         logger.info("No pending rows in '%s' (all have phones or no names).", tab_name)
@@ -391,6 +725,44 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None) -> int:
         emails = []
         first_address = {"street": "", "city": "", "state": "", "zip": ""}
 
+        # Step 1: if the row has a mailing address, try Address Search first.
+        # This often resolves LLC rows more precisely than name search and
+        # can skip unnecessary per-name lookups when it succeeds.
+        addr_result = None
+        if row.get("mail_street"):
+            logger.info(
+                "  Address search first: %s, %s, %s %s",
+                row["mail_street"], row.get("mail_city", ""),
+                row.get("state", ""), row.get("zip", ""),
+            )
+            addr_result = search_address(
+                page,
+                street=row["mail_street"],
+                city=row.get("mail_city", ""),
+                state=row.get("state", "TX"),
+                zip_code=row.get("zip", ""),
+            )
+            if addr_result.get("phone"):
+                logger.info("    Phone (from address): %s", addr_result["phone"])
+                phone_parts.append(f"[ADDR] {addr_result['phone']}")
+            else:
+                logger.info("    Address search: no phone")
+            if addr_result.get("email"):
+                logger.info("    Email (from address): %s", addr_result["email"])
+                emails.append(addr_result["email"])
+            if addr_result.get("address"):
+                first_address = {
+                    "street": addr_result["address"],
+                    "city":   addr_result["city"],
+                    "state":  addr_result["state"],
+                    "zip":    addr_result["zip"],
+                }
+            time.sleep(1)
+
+        # Step 2: always also trace each name. Name searches give us the
+        # specific phone-per-person (which Address Search can't — it only
+        # returns the current resident). If Address Search already found
+        # phones/email, those are kept and these name results are merged.
         for name in row["names"]:
             logger.info("  Tracing: %s", name)
             result = search_name(page, name)
@@ -402,7 +774,7 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None) -> int:
                 phone_parts.append(f"{name} (no phone)")
                 logger.info("    No phone found")
 
-            if result["email"]:
+            if result["email"] and result["email"] not in emails:
                 emails.append(result["email"])
                 logger.info("    Email: %s", result["email"])
 
@@ -420,15 +792,19 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None) -> int:
         email_str = "; ".join(emails)
         logger.info("  Result: %s", phones_str)
 
-        write_result(ws, row["row_num"], phones_str, first_address, email_str)
+        write_result(ws, row["row_num"], phones_str, first_address, email_str, col_map=col_map)
         logger.info("  Written to '%s' row %d", tab_name, row["row_num"])
 
     return len(pending)
 
 
 def run(limit: int = None, headless: bool = False, sheet_id: str = None,
-        tab: str = None, all_tabs: bool = False):
-    """Main entry point: read sheet, trace names, write back results."""
+        tab: str = None, all_tabs: bool = False, retrace_all: bool = False):
+    """Main entry point: read sheet, trace names, write back results.
+
+    retrace_all=True overwrites rows that already have Phones filled in.
+    Default False: only process rows with empty Phones.
+    """
     from sheets_exporter import _get_client
 
     email = os.getenv("SKIPGENIE_EMAIL", "")
@@ -461,7 +837,7 @@ def run(limit: int = None, headless: bool = False, sheet_id: str = None,
 
         total_traced = 0
         for ws, tab_name in tabs_to_run:
-            traced = _trace_tab(page, ws, tab_name, limit=limit)
+            traced = _trace_tab(page, ws, tab_name, limit=limit, retrace_all=retrace_all)
             total_traced += traced
 
         context.close()
@@ -510,6 +886,13 @@ def main():
         "--list-tabs", action="store_true",
         help="List available tabs and exit.",
     )
+    parser.add_argument(
+        "--retrace-all", action="store_true",
+        help="Re-process EVERY row with at least one name, including rows "
+             "that already have Phones. Overwrites existing Phones/Mailing/"
+             "Email cells with new search results. Default: only process "
+             "rows where Phones is empty.",
+    )
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -525,7 +908,7 @@ def main():
 
     headless = args.headless.lower() == "true"
     run(limit=args.limit, headless=headless, sheet_id=args.sheet_id,
-        tab=args.tab, all_tabs=args.all_tabs)
+        tab=args.tab, all_tabs=args.all_tabs, retrace_all=args.retrace_all)
 
 
 if __name__ == "__main__":
