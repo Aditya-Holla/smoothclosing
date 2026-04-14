@@ -43,12 +43,16 @@ if not Path(PYTHON).exists():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def run_script(cmd: list[str], status_container) -> subprocess.CompletedProcess:
-    """Run a pipeline script and stream output."""
+def run_script(cmd: list[str], status_container, timeout: int = 600) -> subprocess.CompletedProcess:
+    """Run a pipeline script and stream output.
+
+    timeout defaults to 10 min. Long-running steps (SMS with 5-min relative
+    waits, big skip-trace batches) must pass a larger value explicitly.
+    """
     status_container.info(f"Running: `{' '.join(cmd)}`")
     result = subprocess.run(
         cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent),
-        timeout=600,
+        timeout=timeout,
     )
     if result.stdout:
         status_container.code(result.stdout[-3000:], language=None)
@@ -191,68 +195,159 @@ with tab_acq:
     # --- Step 3: Skip Trace ---
     with col3:
         st.subheader("3. Skip Trace")
-        st.caption("Find phone numbers via Skip Genie")
+        st.caption("Find phone numbers for leads from the LAST pipeline run only")
         trace_limit = st.number_input("Max leads", min_value=0, value=0, step=5, key="trace_lim",
-                                       help="0 = all leads")
+                                       help="0 = all leads from the latest run")
         if st.button("Skip Trace", type="primary", key="trace"):
-            input_file = "leads_with_equity.csv" if Path("leads_with_equity.csv").exists() else "leads.csv"
-            cmd = [PYTHON, "skipgenie.py", "--input", input_file, "--output", "leads_traced.csv"]
+            # Prefer leads_new_equity.csv (has equity data) over leads_new.csv.
+            # Intentionally NOT falling back to leads.csv - that would re-trace
+            # accumulated old leads from prior runs.
+            if Path("leads_new_equity.csv").exists():
+                input_file = "leads_new_equity.csv"
+            elif Path("leads_new.csv").exists():
+                input_file = "leads_new.csv"
+            else:
+                st.error(
+                    "No leads_new.csv found. Run Process Leads (or Run Full Pipeline) "
+                    "first - Skip Trace only operates on the latest run's new leads."
+                )
+                st.stop()
+
+            row_count = count_csv_rows(input_file)
+            if row_count == 0:
+                st.warning(
+                    f"{input_file} is empty - the last pipeline run found 0 new leads. "
+                    "Nothing to skip trace."
+                )
+                st.stop()
+
+            st.caption(f"Tracing {row_count} new lead(s) from `{input_file}`")
+            cmd = [PYTHON, "skipgenie.py", "--input", input_file, "--output", "leads_new_traced.csv"]
             if trace_limit > 0:
                 cmd.extend(["--max-relatives", "0"])  # faster
+            # Skip trace is ~1 min per lead with relatives. Give 1 hour.
             with st.spinner("Skip tracing... this takes a while"):
-                out = run_script(cmd, st.empty())
+                out = run_script(cmd, st.empty(), timeout=60 * 60)
             if out.returncode == 0:
-                st.success("Skip trace complete")
+                st.success("Skip trace complete -> leads_new_traced.csv")
 
     # --- Step 4: Text ---
     with col4:
         st.subheader("4. Text")
-        st.caption("Send SMS via RingCentral")
+        st.caption("Text ONLY the leads from the latest pipeline run")
         dry_run = st.checkbox("Dry run first", value=True, key="sms_dry")
         if st.button("Send Texts", type="primary", key="sms"):
-            cmd = [PYTHON, "ringcentral_sms.py", "--input", "leads_traced.csv", "--output", "leads_sms_sent.csv"]
+            if not Path("leads_new_traced.csv").exists():
+                st.error(
+                    "No leads_new_traced.csv found. Run Skip Trace first - "
+                    "Send Texts only operates on freshly-traced new leads."
+                )
+                st.stop()
+
+            row_count = count_csv_rows("leads_new_traced.csv")
+            if row_count == 0:
+                st.warning("leads_new_traced.csv is empty - nothing to text.")
+                st.stop()
+
+            st.caption(
+                f"{row_count} new lead(s) in leads_new_traced.csv. "
+                "Previously-texted numbers (from sms_history.csv) will be skipped automatically."
+            )
+            cmd = [PYTHON, "ringcentral_sms.py",
+                   "--input", "leads_new_traced.csv",
+                   "--output", "leads_new_sms_sent.csv"]
             if dry_run:
                 cmd.append("--dry-run")
+            # SMS can take hours due to 5-min wait before each relative.
+            # Estimate: ~5 min per relative + ~2 sec per owner. Give 4 hours.
+            sms_timeout = 4 * 60 * 60  # 14400 sec = 4 hours
             with st.spinner("Sending..." if not dry_run else "Dry run..."):
-                out = run_script(cmd, st.empty())
+                out = run_script(cmd, st.empty(), timeout=sms_timeout)
             if out.returncode == 0:
                 if dry_run:
-                    st.info("Dry run complete — review output above. Uncheck 'Dry run' to send for real.")
+                    st.info("Dry run complete - review output above. Uncheck 'Dry run' to send for real.")
                 else:
-                    st.success("Texts sent")
+                    st.success("Texts sent (and sms_history.csv updated)")
+
+        # Sync to Sheet button: marks Call Status column for every row
+        # whose phone number is in sms_history.csv. Safe to click any time
+        # after Send Texts; never overwrites manual Call Status entries.
+        st.divider()
+        if st.button("Sync to Sheet", key="sync_sheet",
+                     help="Mark Call Status = 'Texted YYYY-MM-DD' in the sheet "
+                          "for every row whose phone is in sms_history.csv. "
+                          "Skips rows that already have a Call Status."):
+            with st.spinner("Syncing..."):
+                out = run_script(
+                    [PYTHON, "sync_call_status.py"],
+                    st.empty(),
+                    timeout=120,
+                )
+            if out.returncode == 0:
+                st.success("Sheet synced. Check the Call Status column.")
 
     # --- Run All ---
     st.divider()
+    st.caption(
+        "Full pipeline = download -> parse new PDFs -> skip trace NEW leads -> push new leads to sheet. "
+        "Texting is intentionally NOT wired in - use the Send Texts button above after reviewing."
+    )
     if st.button("Run Full Pipeline", type="secondary", key="run_all"):
         progress = st.empty()
 
-        progress.info("Step 1/4 — Downloading PDFs...")
+        progress.info("Step 1/4 - Downloading PDFs...")
         run_script([PYTHON, "county_downloader.py"], st.empty())
 
-        progress.info("Step 2/4 — Processing leads...")
+        progress.info("Step 2/4 - Parsing new PDFs (main.py writes leads_new.csv)...")
         run_script([PYTHON, "main.py", "--input", "./input_pdfs", "--output", "leads.csv"], st.empty())
 
-        progress.info("Step 3/4 — Skip tracing...")
-        run_script([PYTHON, "skipgenie.py", "--input", "leads.csv", "--output", "leads_traced.csv"], st.empty())
+        if Path("leads_new_equity.csv").exists():
+            new_file = "leads_new_equity.csv"
+        elif Path("leads_new.csv").exists():
+            new_file = "leads_new.csv"
+        else:
+            new_file = None
 
-        progress.info("Step 4/4 — Pushing to Google Sheets...")
+        if not new_file or count_csv_rows(new_file) == 0:
+            progress.success(
+                "Pipeline finished early - no new leads this run. Nothing to trace or push."
+            )
+            st.stop()
+
+        progress.info(f"Step 3/4 - Skip tracing {count_csv_rows(new_file)} new lead(s) from {new_file}...")
+        run_script(
+            [PYTHON, "skipgenie.py", "--input", new_file, "--output", "leads_new_traced.csv"],
+            st.empty(),
+        )
+
+        progress.info("Step 4/4 - Pushing NEW leads to Google Sheets...")
         run_script([PYTHON, "-c", """
 import csv
 from sheets_exporter import export_to_sheets
-with open('leads_traced.csv') as f:
+with open('leads_new_traced.csv') as f:
     records = list(csv.DictReader(f))
 export_to_sheets(records)
 """], st.empty())
 
-        progress.success("Pipeline complete!")
+        progress.success(
+            "Pipeline complete! Review leads_new_traced.csv below, then click Send Texts when ready."
+        )
 
     # --- View Current Leads ---
     st.divider()
     st.subheader("Current Leads")
-    for csv_name in ["leads_traced.csv", "leads_with_equity.csv", "leads.csv"]:
+    preview_candidates = [
+        ("leads_new_sms_sent.csv",  "Latest run - after SMS"),
+        ("leads_new_traced.csv",    "Latest run - after Skip Trace (about to be texted)"),
+        ("leads_new_equity.csv",    "Latest run - after Equity (ready for Skip Trace)"),
+        ("leads_new.csv",           "Latest run - parsed only (ready for Skip Trace)"),
+        ("leads.csv",               "All leads ever parsed (accumulated)"),
+    ]
+    shown = False
+    for csv_name, label in preview_candidates:
         if Path(csv_name).exists():
             df = pd.read_csv(csv_name)
-            st.write(f"**{csv_name}** — {len(df)} leads")
+            st.write(f"**{csv_name}** - {label} - {len(df)} row(s)")
             st.dataframe(df, use_container_width=True, height=400)
             st.download_button(
                 f"Download {csv_name}",
@@ -260,8 +355,9 @@ export_to_sheets(records)
                 file_name=csv_name,
                 mime="text/csv",
             )
+            shown = True
             break
-    else:
+    if not shown:
         st.info("No leads yet. Run the pipeline to get started.")
 
 

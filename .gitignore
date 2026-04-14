@@ -15,6 +15,13 @@ leads_sms_sent.csv
 leads_tmp_trace.csv
 skip_genie_results.csv
 travis_foreclosures.csv
+# New-batch outputs (only the leads from the latest pipeline run)
+leads_new.csv
+leads_new_equity.csv
+leads_new_traced.csv
+leads_new_sms_sent.csv
+# SMS history — contains real phone numbers, never commit
+sms_history.csv
 
 # State (tracked separately — committed to keep incremental processing)
 # pipeline_state.json  ← intentionally NOT ignored

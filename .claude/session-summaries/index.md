@@ -1,6 +1,8 @@
 # Session Summaries Index
 
-- [2026-04-07 10:35](summary-2026-04-07-103530.md) | **Goal:** Build agentic architecture with Claude Agent SDK — orchestrator + 4 subagents wrapping existing pipeline | **Branch:** main | **Status:** all files created, venv set up, needs ANTHROPIC_API_KEY to test
+- [2026-04-09 15:07](summary-2026-04-09-150730.md) | **Goal:** Add GBP agent (reviews + posts), full codebase audit for refactor, Phase 1 refactor attempt (reverted) | **Branch:** main | **Status:** GBP agent code complete, API access pending (case 6-9712000040978), refactor deferred by user
+- [2026-04-07 15:52](summary-2026-04-07-155200.md) | **Goal:** Full agentic system: orchestrator + 5 agents (PDF, Skip Trace, SMS, Sheets, CAD) + dispositions workflow (buyer tracer, Simple Texting auto-respond) + dashboard chat | **Branch:** main | **Status:** working — 5 agents, 4/6 CAD counties, buyer tracer tested, dashboard live
+- [2026-04-07 10:35](summary-2026-04-07-103530.md) | **Goal:** Build agentic architecture with Claude Agent SDK — orchestrator + 4 subagents wrapping existing pipeline | **Branch:** main | **Status:** superseded by above
 - [2026-04-07 09:16](summary-2026-04-07-091600.md) | **Goal:** Add attorney/trustee extraction from foreclosure PDFs + full pipeline test run | **Branch:** main | **Status:** extraction working, needs end-to-end verification that attorney column flows through equity estimator
 - [2026-04-02 22:00](summary-2026-04-02-220000.md) | **Goal:** RingCentral SMS integration + automation planning + GitHub Actions wiring | **Branch:** main | **Status:** SMS working, automation disabled, pending API key approval for agentic architecture
 - [2026-04-02 18:30](summary-2026-04-02-183000.md) | **Goal:** Address-first Skip Genie search + relationship algo rewrite + h6 clicking | **Branch:** main | **Status:** testing 77-lead run

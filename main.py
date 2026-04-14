@@ -1,12 +1,22 @@
 """
 main.py
 -------
-Entry point for the Texas Foreclosure Notice PDF → CSV pipeline.
+Entry point for the Texas Foreclosure Notice PDF -> CSV pipeline.
+
+Scope: PURE PARSER. This script parses PDFs and writes CSVs only.
+It does NOT skip trace, push to Google Sheets, or send SMS. The
+dashboard (dashboard.py) owns those steps as explicit user actions
+so the team can choose who gets texted. Historical note: main.py
+used to auto-run downstream via an orchestrator agent, which made
+"only text new leads" impossible. See the DEPRECATED block below.
 
 Incremental mode (default):
-  - Only processes PDFs not yet in pipeline_state.json
-  - Appends new leads to Google Sheet (coworker's daily working doc)
-  - Writes leads.csv for downstream scripts (equity, skip trace, SMS)
+  - Discovers PDFs in ./input_pdfs/ and subfolders
+  - Skips any PDF already in pipeline_state.json["processed_pdfs"]
+  - Skips any (owner, address) already in known_lead_keys
+  - Appends the survivors to leads.csv
+  - Writes leads_new.csv: ONLY the leads added in this run
+  - Runs equity on leads_new.csv -> leads_new_equity.csv
 
 Usage:
     python main.py                          # incremental run
@@ -136,8 +146,15 @@ def _ingest_travis_csv(input_folder: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Agent-powered downstream pipeline
+# DEPRECATED: Agent-powered auto-downstream
 # ---------------------------------------------------------------------------
+# The two functions below (_run_agents and _run_direct_fallback) used to run
+# skip trace + sheets push + SMS automatically at the end of every pipeline
+# run. That made it impossible to choose who gets texted from the dashboard,
+# because main.py was silently sending SMS to every newly-parsed lead. They
+# are no longer called from run_pipeline (see Step 10 below) and are kept
+# only as reference. DO NOT call them from new code. The dashboard owns
+# skip trace, sheets, and SMS as explicit, user-controlled steps.
 
 async def _run_agents(enriched_csv: str, logger) -> None:
     """Delegate skip trace → sheets → SMS to the orchestrator agent."""
@@ -328,27 +345,18 @@ def run_pipeline(input_folder: str, output_csv: str) -> None:
         writer.writerows(valid_records)
     logger.info(f"Wrote {len(valid_records)} new lead(s) to {new_leads_csv}")
 
-    # 10. Run downstream enrichment via agents (skip trace → sheets → SMS)
-    enriched_csv = new_leads_csv
+    # 10. Equity estimation (direct call, fast, no LLM needed).
+    #     Writes leads_new_equity.csv. Skip trace / sheets / SMS are NOT
+    #     triggered here anymore — the dashboard owns those steps explicitly
+    #     so you can choose who gets texted. See the DEPRECATED block above.
     try:
-        # Equity estimation (direct call — fast, no LLM needed)
         from equity_estimator import run as run_equity
         equity_csv = new_leads_csv.replace(".csv", "_equity.csv")
         logger.info("Running equity estimator...")
         run_equity(new_leads_csv, equity_csv)
-        enriched_csv = equity_csv
-        logger.info(f"  → Equity estimates written to {equity_csv}")
+        logger.info(f"  -> Equity estimates written to {equity_csv}")
     except Exception as e:
         logger.warning(f"Equity estimator failed ({e}), continuing without equity data.")
-
-    # Delegate to agents for skip trace, sheets push, and SMS
-    import asyncio
-    try:
-        asyncio.run(_run_agents(enriched_csv, logger))
-    except Exception as e:
-        logger.error(f"Agent pipeline failed: {e}")
-        logger.info("Falling back to direct script calls...")
-        _run_direct_fallback(enriched_csv, valid_records, output_csv, logger)
 
     # 11. Update state
     for pdf_path in pdf_paths:

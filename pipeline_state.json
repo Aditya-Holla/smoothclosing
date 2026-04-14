@@ -49,6 +49,31 @@
       "url": "https://www.bellcountytx.com/June 4.pdf?t=202604081553350",
       "downloaded_at": "2026-04-09T09:26:00.919139",
       "size_bytes": 1193176
+    },
+    "burnet/LVRS Holdings LLC 5.5.26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/LVRS Holdings LLC 5.5.26.pdf",
+      "downloaded_at": "2026-04-14T09:27:30.117074",
+      "size_bytes": 815682
+    },
+    "burnet/vega 5.5.26.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/vega 5.5.26.pdf",
+      "downloaded_at": "2026-04-14T09:27:30.703753",
+      "size_bytes": 927036
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL A.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/FORECLOSURE HCV PARTNERS PARCEL A.pdf",
+      "downloaded_at": "2026-04-14T09:27:31.353120",
+      "size_bytes": 929204
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL B.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/FORECLOSURE HCV PARTNERS PARCEL B.pdf",
+      "downloaded_at": "2026-04-14T09:27:31.917606",
+      "size_bytes": 495052
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL C.pdf": {
+      "url": "https://www.burnetcountytexas.org/upload/page/0085/FORECLOSURE HCV PARTNERS PARCEL C.pdf",
+      "downloaded_at": "2026-04-14T09:27:32.694539",
+      "size_bytes": 449574
     }
   },
   "processed_pdfs": {
@@ -391,6 +416,26 @@
     "hays/MAY+2026+Batch+5.pdf": {
       "processed_at": "2026-04-09T12:14:35.355223",
       "records_extracted": 3
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL A.pdf": {
+      "processed_at": "2026-04-14T09:28:43.433741",
+      "records_extracted": 7
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL B.pdf": {
+      "processed_at": "2026-04-14T09:28:43.433790",
+      "records_extracted": 1
+    },
+    "burnet/FORECLOSURE HCV PARTNERS PARCEL C.pdf": {
+      "processed_at": "2026-04-14T09:28:43.433825",
+      "records_extracted": 1
+    },
+    "burnet/LVRS Holdings LLC 5.5.26.pdf": {
+      "processed_at": "2026-04-14T09:28:43.433857",
+      "records_extracted": 0
+    },
+    "burnet/vega 5.5.26.pdf": {
+      "processed_at": "2026-04-14T09:28:43.433889",
+      "records_extracted": 1
     }
   },
   "known_lead_keys": [
@@ -405,6 +450,14 @@
     [
       "",
       "1730 e oltorf st"
+    ],
+    [
+      "",
+      "20704 homes cv"
+    ],
+    [
+      "",
+      "227 lakeside beach, spicewood, tx 78669"
     ],
     [
       "",
@@ -425,6 +478,10 @@
     [
       "",
       "6404 siltstone loop, killeen, tx 76542"
+    ],
+    [
+      "",
+      "7702 fm 1960 east, humble, tx 77346"
     ],
     [
       "abbigale walton and preston walton",
@@ -495,8 +552,16 @@
       "712 south stagecoach trail, san marcos, tx 78666"
     ],
     [
+      "darrell eugene bible and robin louise bible",
+      ""
+    ],
+    [
       "darrell wgksor",
       "491 white cedar trl, killeen, tx 76542"
+    ],
+    [
+      "david bradley short and theisa lee short",
+      ""
     ],
     [
       "david n'segrest",
@@ -527,6 +592,10 @@
       "16004 arbor trail buda, tx 78610"
     ],
     [
+      "don c. holland",
+      ""
+    ],
+    [
       "donna field",
       "8424 brahma plains road temple. tx 76502"
     ],
@@ -553,6 +622,10 @@
     [
       "erma bey eg",
       "2804 greystone dr, killeen, tx 76549"
+    ],
+    [
+      "eugene bible and robin bible",
+      ""
     ],
     [
       "gilbert fang, and rose fang",
@@ -585,6 +658,10 @@
     [
       "james graham, tenisha graham and paulette f. graham",
       "220 south pierce street, burnet, tx 78611"
+    ],
+    [
+      "jason coleman and leslie a. coleman",
+      ""
     ],
     [
       "javier delgadillo and elissa m anzures",
@@ -651,6 +728,10 @@
       "5642 cindy lane"
     ],
     [
+      "marc t. hamilton",
+      ""
+    ],
+    [
       "markus o. williams, il",
       "201 west dale avenue, nolanville, tx 76559"
     ],
@@ -669,6 +750,10 @@
     [
       "michelle lee hobbs",
       "205 sagehill drive granite shoals, tx 78654"
+    ],
+    [
+      "mike love",
+      ""
     ],
     [
       "nadya martinez-cortes",
@@ -769,6 +854,10 @@
     [
       "tonnica nicole renee wooden and stephan lamar wooden",
       "3708 rusack dr, killeen, tx 76542"
+    ],
+    [
+      "tony r. last and ann m last",
+      ""
     ],
     [
       "tyler somer and bianca izamare stromer",
