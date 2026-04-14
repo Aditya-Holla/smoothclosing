@@ -31,9 +31,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def _norm_phone(p: str) -> str:
-    d = re.sub(r"\D", "", p or "")
-    return d[-10:] if len(d) >= 10 else d
+# Canonical impl lives in utils.normalize_phone — don't redefine.
+from utils import normalize_phone as _norm_phone
 
 
 def _col_letter(n: int) -> str:

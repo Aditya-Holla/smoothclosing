@@ -482,9 +482,9 @@ with tab_dispo:
         # Show current state of the selected tab
         try:
             from sheets_exporter import _get_client
-            DISPO_SHEET_ID = "1CCcMeIP8we_HsnUBnE4Pe-RAm2JYnousjtuCRhGK6x8"
+            from buyer_tracer import DISPOSITIONS_SHEET_ID
             client = _get_client()
-            sheet = client.open_by_key(DISPO_SHEET_ID)
+            sheet = client.open_by_key(DISPOSITIONS_SHEET_ID)
             ws = sheet.worksheet(metro)
             data = ws.get_all_values()
             if len(data) > 1:
@@ -505,7 +505,10 @@ with tab_dispo:
             st.warning(f"Could not load sheet: {e}")
 
     st.divider()
+    # Build the sheet link from the env-driven ID so changing the sheet only
+    # requires updating .env (DISPOSITIONS_SHEET_ID).
+    from buyer_tracer import DISPOSITIONS_SHEET_ID as _dispo_id
     st.caption(
-        "Dispositions sheet: "
-        "[Open in Google Sheets](https://docs.google.com/spreadsheets/d/1CCcMeIP8we_HsnUBnE4Pe-RAm2JYnousjtuCRhGK6x8)"
+        f"Dispositions sheet: "
+        f"[Open in Google Sheets](https://docs.google.com/spreadsheets/d/{_dispo_id})"
     )

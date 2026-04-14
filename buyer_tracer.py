@@ -560,7 +560,14 @@ def parse_address(addr_line: str) -> dict:
 
 # ── Google Sheets Integration ──────────────────────────────────────
 
-DISPOSITIONS_SHEET_ID = "1CCcMeIP8we_HsnUBnE4Pe-RAm2JYnousjtuCRhGK6x8"
+# Dispositions Google Sheet ID. Reads from .env (DISPOSITIONS_SHEET_ID)
+# so the team can swap sheets without code changes. Falls back to the
+# hardcoded production ID if the env var isn't set, so existing deploys
+# don't break.
+DISPOSITIONS_SHEET_ID = os.getenv(
+    "DISPOSITIONS_SHEET_ID",
+    "1CCcMeIP8we_HsnUBnE4Pe-RAm2JYnousjtuCRhGK6x8",
+)
 
 
 def get_worksheet(sheet_id: str = None, tab: str = None):

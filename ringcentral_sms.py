@@ -49,10 +49,10 @@ SMS_HISTORY_CSV = "sms_history.csv"
 HISTORY_FIELDS = ["phone_number", "sent_at", "owner_name", "property_address"]
 
 
-def _normalize_phone(num: str) -> str:
-    """Strip to digits and return the last 10 for consistent matching."""
-    digits = re.sub(r"\D", "", num or "")
-    return digits[-10:] if len(digits) >= 10 else digits
+# Re-exported for backward compatibility — the canonical implementation
+# lives in utils.normalize_phone (also used by sync_call_status.py and
+# sheets_exporter._clean_phone). Don't change behavior here; change utils.
+from utils import normalize_phone as _normalize_phone
 
 
 def load_sms_history(path: str = SMS_HISTORY_CSV) -> set:

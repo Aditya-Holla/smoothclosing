@@ -64,10 +64,13 @@ Sheet with a "Call Status" entry
 - Delegate to sheets-agent to push the final data to the Sheet
 
 ### Buyer/LLC name lookup ("skip trace this buyer", "find phone for [name]"):
-- User provides names only (no addresses)
-- Tell the skip-trace-agent to use name-only mode (skip_genie_search.py)
-- The agent will write the names to leads.csv and run the name search
-- Chain to sms-agent if user wants to text them
+- Use buyer_tracer.py for name-based skip tracing of dispositions buyers.
+  It reads names from the Dispositions Google Sheet (Sheet3), traces them,
+  and writes phones/mailing/email back into the same row. Tries Address
+  Search first when a mailing address is available, then falls back to
+  Name Search per person.
+- For ad-hoc one-off names not tied to the sheet, the user should add them
+  to the Dispositions sheet first, then run buyer_tracer.
 
 ### Property research ("who owns this", "deed history", "find flippers"):
 - Delegate to cad-agent: search by address or owner name
