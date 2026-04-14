@@ -46,22 +46,9 @@ def _col_letter(n: int) -> str:
     return result
 
 
-# Same visual style applied to every Name cell across both sheets so the
-# whole spreadsheet looks like one cohesive document.
-NAME_FORMAT_REGULAR = {
-    "textFormat": {
-        "fontFamily": "Arial",
-        "fontSize": 10,
-        "bold": False,
-        "foregroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
-    },
-    "horizontalAlignment": "LEFT",
-    "verticalAlignment": "MIDDLE",
-}
-NAME_FORMAT_BOLD = {
-    **NAME_FORMAT_REGULAR,
-    "textFormat": {**NAME_FORMAT_REGULAR["textFormat"], "bold": True},
-}
+# Visual style is defined once in sheets_exporter.py so the on-push
+# auto-formatter and this one-off cleanup stay in lock-step.
+from sheets_exporter import NAME_FORMAT_REGULAR, NAME_FORMAT_BOLD  # noqa: E402
 
 
 def standardize_acquisitions(client, dry_run: bool = False) -> dict:

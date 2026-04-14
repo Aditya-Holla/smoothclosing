@@ -16,7 +16,29 @@ import os
 import re
 from datetime import date, datetime
 
+from utils import title_case_name
+
 logger = logging.getLogger(__name__)
+
+
+# Visual style applied to every Name cell across all sheets so the whole
+# spreadsheet looks like one cohesive document. Same constants used by
+# standardize_sheets.py (one-off cleanup) and the auto-format-on-push
+# logic in this module (keeps new rows consistent with existing ones).
+NAME_FORMAT_REGULAR = {
+    "textFormat": {
+        "fontFamily": "Arial",
+        "fontSize": 10,
+        "bold": False,
+        "foregroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
+    },
+    "horizontalAlignment": "LEFT",
+    "verticalAlignment": "MIDDLE",
+}
+NAME_FORMAT_BOLD = {
+    **NAME_FORMAT_REGULAR,
+    "textFormat": {**NAME_FORMAT_REGULAR["textFormat"], "bold": True},
+}
 
 # Column layout matching the Austin Foreclosure Spreadsheet format
 HEADER_ROW = [
@@ -311,7 +333,11 @@ def records_to_sheet_rows(records: list[dict]) -> list[list]:
         mail_street, mail_city, mail_state, mail_zip = _parse_address(
             record.get("mailing_address", "")
         )
-        owner_name = _clean_val(record.get("owner_name", ""))
+        # Title-case names at write time so the sheet stays consistent
+        # without needing a periodic standardize_sheets.py run. Owner
+        # names (DOUGLAS WILSON), relative names (NELL HOLLAND), and
+        # case variants (Hcv Partners Llc) all get normalized here.
+        owner_name = title_case_name(_clean_val(record.get("owner_name", "")))
         lender = _clean_val(record.get("lender", ""))
 
         # Owner row (all columns filled)
@@ -341,7 +367,9 @@ def records_to_sheet_rows(records: list[dict]) -> list[list]:
 
         # Relative rows underneath
         for ri in range(1, 7):
-            rel_name = _clean_val(record.get(f"rel_{ri}_name", ""))
+            # Title-case relative names too (skipgenie writes them in
+            # ALL CAPS; this normalizes at write time).
+            rel_name = title_case_name(_clean_val(record.get(f"rel_{ri}_name", "")))
             rel_phone = _clean_phone(record.get(f"rel_{ri}_phone_1", ""))
             if not rel_name and not rel_phone:
                 continue
@@ -432,6 +460,48 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
     _highlight_rows(worksheet, start_row, end_row)
     _add_dropdowns(worksheet, start_row, end_row)
 
+    # Apply consistent visual format to the new Name cells so the new
+    # rows match the rest of the sheet without needing standardize_sheets.py.
+    # Owner row (col A populated = Date Posted) -> bold; relative row -> regular.
+    _format_new_name_cells(worksheet, rows_to_add, start_row)
+
     logger.info(f"Sheets: appended {leads_appended} lead(s) ({len(rows_to_add)} rows incl. relatives, rows {start_row}-{end_row}).")
     print(f"\n✓ Appended {leads_appended} lead(s) ({len(rows_to_add)} rows) to Google Sheet")
     return leads_appended
+
+
+def _format_new_name_cells(worksheet, rows_to_add: list, start_row: int) -> None:
+    """Apply Arial 10pt + bold-owner / regular-relative formatting to the
+    Name cells (cols B and Q) for a freshly-appended block of rows.
+
+    We tell owner rows from relative rows by checking column A (Date
+    Posted) — owner rows have a date filled in, relative rows are blank.
+    Single batch_format call to avoid the 60-writes/min Sheets quota.
+    """
+    OWNER_COL_LETTER = "B"   # col 2 = owner Name
+    CONTACT_COL_LETTER = "Q"  # col 17 = contact Name (owner repeated, or relative)
+
+    bold_ranges = []
+    regular_ranges = []
+    for offset, row in enumerate(rows_to_add):
+        sheet_row = start_row + offset
+        date_cell = row[0] if row else ""
+        is_owner_row = bool(str(date_cell).strip())
+        if is_owner_row:
+            bold_ranges.append(f"{OWNER_COL_LETTER}{sheet_row}")
+            bold_ranges.append(f"{CONTACT_COL_LETTER}{sheet_row}")
+        else:
+            # Relative row (no Date) — only col Q has a name; format that
+            regular_ranges.append(f"{CONTACT_COL_LETTER}{sheet_row}")
+
+    format_batch = []
+    for rng in bold_ranges:
+        format_batch.append({"range": rng, "format": NAME_FORMAT_BOLD})
+    for rng in regular_ranges:
+        format_batch.append({"range": rng, "format": NAME_FORMAT_REGULAR})
+    if format_batch:
+        try:
+            worksheet.batch_format(format_batch)
+        except Exception as e:
+            # Don't fail the whole push just because formatting hiccupped
+            logger.warning(f"Sheets: name-cell formatting failed ({e}); push otherwise OK.")

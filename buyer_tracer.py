@@ -678,6 +678,29 @@ def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = 
         return
     ws.batch_update(updates, value_input_option=ValueInputOption.raw)
 
+    # Apply consistent Arial 10pt bold formatting to the Name 1-4 cells
+    # in this row so every row buyer_tracer touches looks the same.
+    # Manually-added rows that buyer_tracer never sees won't get
+    # auto-formatted — run standardize_sheets.py periodically for those.
+    _format_name_cells(ws, row_num, col_map)
+
+
+def _format_name_cells(ws, row_num: int, col_map: dict) -> None:
+    """Apply Arial 10pt + bold to the Name 1-4 cells of one row."""
+    from sheets_exporter import NAME_FORMAT_BOLD
+    name_cols = [col_map.get(k) for k in ("name1", "name2", "name3", "name4")]
+    name_cols = [c for c in name_cols if c]
+    if not name_cols:
+        return
+    format_batch = [
+        {"range": f"{_col_letter(c)}{row_num}", "format": NAME_FORMAT_BOLD}
+        for c in name_cols
+    ]
+    try:
+        ws.batch_format(format_batch)
+    except Exception as e:
+        logger.debug(f"  Name-cell formatting hiccupped on row {row_num}: {e}")
+
 
 # ── Main ───────────────────────────────────────────────────────────
 
