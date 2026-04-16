@@ -77,7 +77,7 @@ def count_csv_rows(path: str) -> int:
 
 st.title("🏠 SmoothClosing")
 
-tab_chat, tab_acq, tab_dispo = st.tabs(["Chat", "Acquisitions", "Dispositions"])
+tab_chat, tab_acq, tab_dispo, tab_aoh = st.tabs(["Chat", "Acquisitions", "Dispositions", "Heirship Affidavit"])
 
 # ===========================================================================
 # CHAT TAB — Talk to the orchestrator
@@ -512,3 +512,345 @@ with tab_dispo:
         f"Dispositions sheet: "
         f"[Open in Google Sheets](https://docs.google.com/spreadsheets/d/{_dispo_id})"
     )
+
+
+# ===========================================================================
+# HEIRSHIP AFFIDAVIT TAB
+# ===========================================================================
+
+with tab_aoh:
+    st.header("Affidavit of Heirship Generator")
+    st.caption("Fill in the questionnaire fields below, then generate the PDF.")
+
+    # --- Session state for dynamic lists ---
+    for key, default in [
+        ("aoh_num_children", 1),
+        ("aoh_num_deceased_children", 0),
+        ("aoh_num_grandchildren", 0),
+        ("aoh_num_marriages", 1),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
+
+    # -----------------------------------------------------------------------
+    # Section 1: Decedent Info
+    # -----------------------------------------------------------------------
+    st.subheader("Decedent Information")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        decedent_full_name = st.text_input("Decedent Full Name", key="aoh_dec_name",
+                                            placeholder="e.g. Ethel Mae Hafernik Hummell")
+        decedent_aka = st.text_input("Decedent AKA (leave blank if none)", key="aoh_dec_aka",
+                                      placeholder="e.g. Ethel M. Hummell")
+        decedent_dob = st.text_input("Decedent Date of Birth", key="aoh_dec_dob",
+                                      placeholder="MM/DD/YYYY")
+    with col_d2:
+        death_date = st.text_input("Date of Death", key="aoh_death_date",
+                                    placeholder="e.g. October 6, 2010")
+        death_city = st.text_input("City of Death", key="aoh_death_city", value="Austin")
+        death_county = st.text_input("County of Death", key="aoh_death_county", value="Travis")
+
+    st.caption("Decedent's Residential Address at Time of Death")
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        res_address = st.text_input("Street Address", key="aoh_res_addr",
+                                     placeholder="e.g. 8710 Colonial Dr.")
+        res_city = st.text_input("City", key="aoh_res_city", value="Austin")
+        res_state = st.text_input("State", key="aoh_res_state", value="Texas")
+    with col_r2:
+        res_zip = st.text_input("Zip", key="aoh_res_zip")
+        res_county = st.text_input("County", key="aoh_res_county", value="Travis")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 2: Affiant (family member)
+    # -----------------------------------------------------------------------
+    st.subheader("Affiant (Family Member)")
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        aff_name = st.text_input("Affiant Name", key="aoh_aff_name",
+                                  placeholder="e.g. Norman Hummell")
+        aff_aka = st.text_input("Affiant AKA (leave blank if none)", key="aoh_aff_aka",
+                                 placeholder="e.g. Norman S. Hummell")
+        aff_relationship = st.text_input("Relationship to Decedent", key="aoh_aff_rel",
+                                          placeholder="e.g. husband")
+        aff_years = st.text_input("Years Known Decedent", key="aoh_aff_years",
+                                   placeholder="e.g. forty-eight (48)")
+    with col_a2:
+        aff_address = st.text_input("Street Address", key="aoh_aff_addr",
+                                     placeholder="e.g. 8710 Colonial Dr.")
+        aff_city = st.text_input("City", key="aoh_aff_city", value="Austin")
+        aff_county = st.text_input("County", key="aoh_aff_county", value="Travis")
+        aff_state = st.text_input("State", key="aoh_aff_state", value="Texas")
+        aff_zip = st.text_input("Zip", key="aoh_aff_zip")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 3 & 4: Witnesses
+    # -----------------------------------------------------------------------
+    st.subheader("Witnesses (2 required — not related to decedent, knew decedent 10+ years)")
+    col_w1, col_w2 = st.columns(2)
+
+    with col_w1:
+        st.caption("Witness 1")
+        w1_name = st.text_input("Name", key="aoh_w1_name")
+        w1_address = st.text_input("Street Address", key="aoh_w1_addr")
+        w1_city = st.text_input("City", key="aoh_w1_city")
+        w1_county = st.text_input("County", key="aoh_w1_county")
+        w1_state = st.text_input("State", key="aoh_w1_state", value="Texas")
+        w1_zip = st.text_input("Zip", key="aoh_w1_zip")
+        w1_relationship = st.text_input("Relationship", key="aoh_w1_rel",
+                                         placeholder="e.g. friend")
+        w1_years = st.text_input("Years Known", key="aoh_w1_years",
+                                  placeholder="e.g. fifteen (15)")
+
+    with col_w2:
+        st.caption("Witness 2")
+        w2_name = st.text_input("Name", key="aoh_w2_name")
+        w2_address = st.text_input("Street Address", key="aoh_w2_addr")
+        w2_city = st.text_input("City", key="aoh_w2_city")
+        w2_county = st.text_input("County", key="aoh_w2_county")
+        w2_state = st.text_input("State", key="aoh_w2_state", value="Texas")
+        w2_zip = st.text_input("Zip", key="aoh_w2_zip")
+        w2_relationship = st.text_input("Relationship", key="aoh_w2_rel",
+                                         placeholder="e.g. friend")
+        w2_years = st.text_input("Years Known", key="aoh_w2_years",
+                                  placeholder="e.g. fifteen (15)")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 5: Marital History
+    # -----------------------------------------------------------------------
+    st.subheader("Marital History")
+    num_marriages = st.number_input(
+        "Number of marriages", min_value=0, max_value=5, value=1, key="aoh_num_marriages_input",
+    )
+    marriages_data = []
+    for i in range(num_marriages):
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            m_date = st.text_input(f"Marriage {i+1} Date", key=f"aoh_m{i}_date",
+                                    placeholder="MM/DD/YYYY")
+        with col_m2:
+            m_spouse = st.text_input(f"Spouse Name", key=f"aoh_m{i}_spouse")
+        with col_m3:
+            m_spouse_aka = st.text_input(f"Spouse AKA", key=f"aoh_m{i}_spouse_aka",
+                                          placeholder="leave blank if none")
+        marriages_data.append({"date": m_date, "spouse_name": m_spouse, "spouse_aka": m_spouse_aka})
+
+    divorced = st.selectbox("Was decedent divorced?", ["No", "Yes"], key="aoh_divorced")
+    divorce_dates = []
+    if divorced == "Yes":
+        num_divorces = st.number_input("Number of divorces", min_value=1, max_value=5, value=1, key="aoh_num_div")
+        for i in range(num_divorces):
+            dd = st.text_input(f"Divorce {i+1} Date", key=f"aoh_div{i}_date")
+            divorce_dates.append(dd)
+
+    st.caption("Remarriages (if any)")
+    num_remarriages = st.number_input(
+        "Number of remarriages", min_value=0, max_value=5, value=0, key="aoh_num_remarriages",
+    )
+    remarriages_data = []
+    for i in range(num_remarriages):
+        col_rm1, col_rm2, col_rm3 = st.columns(3)
+        with col_rm1:
+            rm_date = st.text_input(f"Remarriage {i+1} Date", key=f"aoh_rm{i}_date",
+                                     placeholder="MM/DD/YYYY")
+        with col_rm2:
+            rm_spouse = st.text_input(f"Spouse Name", key=f"aoh_rm{i}_spouse")
+        with col_rm3:
+            rm_spouse_aka = st.text_input(f"Spouse AKA", key=f"aoh_rm{i}_spouse_aka",
+                                           placeholder="leave blank if none")
+        remarriages_data.append({"date": rm_date, "spouse_name": rm_spouse, "spouse_aka": rm_spouse_aka})
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 6: Children
+    # -----------------------------------------------------------------------
+    st.subheader("Children")
+    num_children = st.number_input(
+        "Number of children", min_value=0, max_value=20, value=1, key="aoh_num_children_input",
+    )
+    children_data = []
+    for i in range(num_children):
+        col_c1, col_c2, col_c3, col_c4 = st.columns(4)
+        with col_c1:
+            c_name = st.text_input(f"Child {i+1} Full Name", key=f"aoh_c{i}_name")
+        with col_c2:
+            c_dob = st.text_input(f"Date of Birth", key=f"aoh_c{i}_dob", placeholder="MM/DD/YYYY")
+        with col_c3:
+            c_rel = st.selectbox(f"Type", ["Biological", "Step", "Adopted"], key=f"aoh_c{i}_rel")
+        with col_c4:
+            c_parent = st.text_input(f"Other Parent", key=f"aoh_c{i}_parent")
+        children_data.append({"name": c_name, "dob": c_dob, "relationship": c_rel, "other_parent": c_parent})
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 7: Deceased Children
+    # -----------------------------------------------------------------------
+    st.subheader("Deceased Children (if any)")
+    num_deceased = st.number_input(
+        "Number of deceased children", min_value=0, max_value=20, value=0, key="aoh_num_dec_children",
+    )
+    deceased_children_data = []
+    for i in range(num_deceased):
+        col_dc1, col_dc2 = st.columns(2)
+        with col_dc1:
+            dc_name = st.text_input(f"Deceased Child {i+1} Name", key=f"aoh_dc{i}_name")
+        with col_dc2:
+            dc_death = st.text_input(f"Date of Death", key=f"aoh_dc{i}_death", placeholder="MM/DD/YYYY")
+        deceased_children_data.append({"name": dc_name, "death_date": dc_death})
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 8: Grandchildren of Deceased Children
+    # -----------------------------------------------------------------------
+    st.subheader("Children of Deceased Children (if any)")
+    num_gc = st.number_input(
+        "Number of children of deceased children", min_value=0, max_value=20, value=0, key="aoh_num_gc",
+    )
+    grandchildren_data = []
+    for i in range(num_gc):
+        col_g1, col_g2, col_g3 = st.columns(3)
+        with col_g1:
+            g_name = st.text_input(f"Grandchild {i+1} Name", key=f"aoh_gc{i}_name")
+        with col_g2:
+            g_dob = st.text_input(f"Date of Birth", key=f"aoh_gc{i}_dob", placeholder="MM/DD/YYYY")
+        with col_g3:
+            g_parents = st.text_input(f"Parents", key=f"aoh_gc{i}_parents")
+        grandchildren_data.append({"name": g_name, "dob": g_dob, "parents": g_parents})
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 9: Additional Info
+    # -----------------------------------------------------------------------
+    st.subheader("Additional Information")
+    had_will = st.text_input(
+        "Did decedent have a Last Will and Testament? Was it probated?",
+        key="aoh_will",
+        placeholder="e.g. No",
+    )
+    unpaid_debts = st.text_input(
+        "Any debts when decedent died? Any unpaid debts remaining?",
+        key="aoh_debts",
+        placeholder="e.g. No",
+    )
+    unpaid_taxes = st.selectbox("Unpaid estate or inheritance taxes?", ["No", "Yes"], key="aoh_taxes")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Build data dict (shared by both buttons)
+    # -----------------------------------------------------------------------
+    def _build_aoh_data() -> dict | None:
+        missing = []
+        if not decedent_full_name: missing.append("Decedent Name")
+        if not death_date: missing.append("Date of Death")
+        if not aff_name: missing.append("Affiant Name")
+        if not w1_name: missing.append("Witness 1 Name")
+        if not w2_name: missing.append("Witness 2 Name")
+        if missing:
+            st.error(f"Missing required fields: {', '.join(missing)}")
+            return None
+        return {
+            "decedent_full_name": decedent_full_name,
+            "decedent_aka": decedent_aka,
+            "decedent_dob": decedent_dob,
+            "death_date": death_date,
+            "death_city": death_city,
+            "death_county": death_county,
+            "residence_address": res_address,
+            "residence_city": res_city,
+            "residence_state": res_state,
+            "residence_zip": res_zip,
+            "residence_county": res_county,
+            "affiant_name": aff_name,
+            "affiant_aka": aff_aka,
+            "affiant_relationship": aff_relationship,
+            "affiant_years_known": aff_years,
+            "affiant_address": aff_address,
+            "affiant_city": aff_city,
+            "affiant_county": aff_county,
+            "affiant_state": aff_state,
+            "affiant_zip": aff_zip,
+            "w1_name": w1_name,
+            "w1_address": w1_address,
+            "w1_city": w1_city,
+            "w1_county": w1_county,
+            "w1_state": w1_state,
+            "w1_zip": w1_zip,
+            "w1_relationship": w1_relationship,
+            "w1_years_known": w1_years,
+            "w2_name": w2_name,
+            "w2_address": w2_address,
+            "w2_city": w2_city,
+            "w2_county": w2_county,
+            "w2_state": w2_state,
+            "w2_zip": w2_zip,
+            "w2_relationship": w2_relationship,
+            "w2_years_known": w2_years,
+            "marriages": marriages_data,
+            "divorced": divorced == "Yes",
+            "divorce_dates": divorce_dates,
+            "remarriages": remarriages_data,
+            "children": children_data,
+            "deceased_children": deceased_children_data,
+            "grandchildren": grandchildren_data,
+            "had_will": had_will,
+            "unpaid_debts": unpaid_debts,
+            "unpaid_taxes": unpaid_taxes == "Yes",
+            "property_description": "",
+            "signing_county": death_county,
+            "signing_day": "____",
+            "signing_month_year": "__________, ______",
+        }
+
+    # -----------------------------------------------------------------------
+    # Generate buttons
+    # -----------------------------------------------------------------------
+    btn_col1, btn_col2 = st.columns(2)
+
+    with btn_col1:
+        if st.button("Generate Affidavit PDF", type="primary", key="aoh_generate"):
+            data = _build_aoh_data()
+            if data:
+                from aoh_generator import generate_aoh_pdf
+                try:
+                    pdf_bytes = generate_aoh_pdf(data)
+                    safe_name = decedent_full_name.replace(" ", "_").replace("/", "-")
+                    st.success("Affidavit PDF generated!")
+                    st.download_button(
+                        "Download Affidavit PDF",
+                        data=pdf_bytes,
+                        file_name=f"AOH_{safe_name}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                    )
+                except Exception as e:
+                    st.error(f"Error generating PDF: {e}")
+
+    with btn_col2:
+        if st.button("Generate Questionnaire PDF", type="secondary", key="aoh_questionnaire"):
+            data = _build_aoh_data()
+            if data:
+                from aoh_generator import generate_questionnaire_pdf
+                try:
+                    pdf_bytes = generate_questionnaire_pdf(data)
+                    safe_name = decedent_full_name.replace(" ", "_").replace("/", "-")
+                    st.success("Questionnaire PDF generated!")
+                    st.download_button(
+                        "Download Questionnaire PDF",
+                        data=pdf_bytes,
+                        file_name=f"AOH_Questionnaire_{safe_name}.pdf",
+                        mime="application/pdf",
+                        type="secondary",
+                    )
+                except Exception as e:
+                    st.error(f"Error generating PDF: {e}")
