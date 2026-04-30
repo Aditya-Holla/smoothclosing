@@ -33,10 +33,34 @@ st.set_page_config(
     layout="wide",
 )
 
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+# BASE_DIR = where this code lives (dashboard.py + all sibling .py scripts)
+# DATA_DIR = where mutable state lives (leads.csv, *.json, input_pdfs/, etc.)
+#
+# For local development DATA_DIR defaults to BASE_DIR — same as before.
+# In hosted deploys, set DATA_DIR=/data (or wherever the persistent volume is
+# mounted) so user data survives container redeploys.
+
+BASE_DIR = Path(__file__).parent.resolve()
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR)).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 # Use the agents venv python if available
-PYTHON = str(Path(__file__).parent / ".venv-agents" / "bin" / "python3")
+PYTHON = str(BASE_DIR / ".venv-agents" / "bin" / "python3")
 if not Path(PYTHON).exists():
     PYTHON = sys.executable
+
+
+def _script(name: str) -> str:
+    """Absolute path to a sibling .py script (so it works regardless of cwd)."""
+    return str(BASE_DIR / name)
+
+
+def _data(name: str) -> Path:
+    """Path inside DATA_DIR for a data file."""
+    return DATA_DIR / name
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +74,12 @@ def run_script(cmd: list[str], status_container, timeout: int = 600) -> subproce
     waits, big skip-trace batches) must pass a larger value explicitly.
     """
     status_container.info(f"Running: `{' '.join(cmd)}`")
+    # cwd=DATA_DIR so scripts read/write relative paths inside the data volume.
+    # PYTHONPATH=BASE_DIR so they can still `import` sibling modules.
+    env = {**os.environ, "PYTHONPATH": str(BASE_DIR)}
     result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent),
-        timeout=timeout,
+        cmd, capture_output=True, text=True, cwd=str(DATA_DIR),
+        env=env, timeout=timeout,
     )
     if result.stdout:
         status_container.code(result.stdout[-3000:], language=None)
@@ -65,9 +92,10 @@ def run_script(cmd: list[str], status_container, timeout: int = 600) -> subproce
 
 
 def count_csv_rows(path: str) -> int:
-    if not Path(path).exists():
+    p = _data(path) if not Path(path).is_absolute() else Path(path)
+    if not p.exists():
         return 0
-    with open(path) as f:
+    with open(p) as f:
         return sum(1 for _ in csv.reader(f)) - 1  # minus header
 
 
@@ -132,7 +160,8 @@ async def main():
 asyncio.run(main())
 """],
                         capture_output=True, text=True,
-                        cwd=str(Path(__file__).parent),
+                        cwd=str(DATA_DIR),
+                        env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
                         timeout=300,
                     )
                     response = result.stdout.strip()
@@ -180,13 +209,13 @@ with tab_acq:
         if st.button("Process Leads", type="primary", key="proc"):
             log_area = st.empty()
             with st.spinner("Parsing PDFs..."):
-                out = run_script([PYTHON, "main.py", "--input", "./input_pdfs", "--output", "leads.csv"], log_area)
+                out = run_script([PYTHON, _script("main.py"), "--input", "./input_pdfs", "--output", "leads.csv"], log_area)
             if out.returncode == 0:
                 count = count_csv_rows("leads.csv")
                 st.success(f"{count} leads extracted")
                 if include_equity:
                     with st.spinner("Running equity estimator..."):
-                        out2 = run_script([PYTHON, "equity_estimator.py", "--input", "leads.csv", "--output", "leads_with_equity.csv"], log_area)
+                        out2 = run_script([PYTHON, _script("equity_estimator.py"), "--input", "leads.csv", "--output", "leads_with_equity.csv"], log_area)
                     if out2.returncode == 0:
                         st.success("Equity estimates added")
             else:
@@ -202,9 +231,9 @@ with tab_acq:
             # Prefer leads_new_equity.csv (has equity data) over leads_new.csv.
             # Intentionally NOT falling back to leads.csv - that would re-trace
             # accumulated old leads from prior runs.
-            if Path("leads_new_equity.csv").exists():
+            if _data("leads_new_equity.csv").exists():
                 input_file = "leads_new_equity.csv"
-            elif Path("leads_new.csv").exists():
+            elif _data("leads_new.csv").exists():
                 input_file = "leads_new.csv"
             else:
                 st.error(
@@ -222,7 +251,7 @@ with tab_acq:
                 st.stop()
 
             st.caption(f"Tracing {row_count} new lead(s) from `{input_file}`")
-            cmd = [PYTHON, "skipgenie.py", "--input", input_file, "--output", "leads_new_traced.csv"]
+            cmd = [PYTHON, _script("skipgenie.py"), "--input", input_file, "--output", "leads_new_traced.csv"]
             if trace_limit > 0:
                 cmd.extend(["--max-relatives", "0"])  # faster
             # Skip trace is ~1 min per lead with relatives. Give 1 hour.
@@ -237,7 +266,7 @@ with tab_acq:
         st.caption("Text ONLY the leads from the latest pipeline run")
         dry_run = st.checkbox("Dry run first", value=True, key="sms_dry")
         if st.button("Send Texts", type="primary", key="sms"):
-            if not Path("leads_new_traced.csv").exists():
+            if not _data("leads_new_traced.csv").exists():
                 st.error(
                     "No leads_new_traced.csv found. Run Skip Trace first - "
                     "Send Texts only operates on freshly-traced new leads."
@@ -253,13 +282,15 @@ with tab_acq:
                 f"{row_count} new lead(s) in leads_new_traced.csv. "
                 "Previously-texted numbers (from sms_history.csv) will be skipped automatically."
             )
-            cmd = [PYTHON, "ringcentral_sms.py",
+            cmd = [PYTHON, _script("ringcentral_sms.py"),
                    "--input", "leads_new_traced.csv",
                    "--output", "leads_new_sms_sent.csv"]
             if dry_run:
                 cmd.append("--dry-run")
-            # SMS can take hours due to 5-min wait before each relative.
-            # Estimate: ~5 min per relative + ~2 sec per owner. Give 4 hours.
+            # SMS parallelizes across families (default 8 workers) but keeps
+            # the 5-min intra-family spacing between relatives. Wall time is
+            # roughly (families / workers) × 15 min for an average family.
+            # 4-hour timeout comfortably covers a 100+ lead batch.
             sms_timeout = 4 * 60 * 60  # 14400 sec = 4 hours
             with st.spinner("Sending..." if not dry_run else "Dry run..."):
                 out = run_script(cmd, st.empty(), timeout=sms_timeout)
@@ -299,11 +330,11 @@ with tab_acq:
         run_script([PYTHON, "county_downloader.py"], st.empty())
 
         progress.info("Step 2/4 - Parsing new PDFs (main.py writes leads_new.csv)...")
-        run_script([PYTHON, "main.py", "--input", "./input_pdfs", "--output", "leads.csv"], st.empty())
+        run_script([PYTHON, _script("main.py"), "--input", "./input_pdfs", "--output", "leads.csv"], st.empty())
 
-        if Path("leads_new_equity.csv").exists():
+        if _data("leads_new_equity.csv").exists():
             new_file = "leads_new_equity.csv"
-        elif Path("leads_new.csv").exists():
+        elif _data("leads_new.csv").exists():
             new_file = "leads_new.csv"
         else:
             new_file = None
@@ -315,9 +346,12 @@ with tab_acq:
             st.stop()
 
         progress.info(f"Step 3/4 - Skip tracing {count_csv_rows(new_file)} new lead(s) from {new_file}...")
+        # Skip Genie uses Playwright with 2FA + manual waits; a batch of 50+
+        # leads can exceed 30 min. Give it a full hour before timing out.
         run_script(
-            [PYTHON, "skipgenie.py", "--input", new_file, "--output", "leads_new_traced.csv"],
+            [PYTHON, _script("skipgenie.py"), "--input", new_file, "--output", "leads_new_traced.csv"],
             st.empty(),
+            timeout=3600,
         )
 
         progress.info("Step 4/4 - Pushing NEW leads to Google Sheets...")
@@ -345,7 +379,7 @@ export_to_sheets(records)
     ]
     shown = False
     for csv_name, label in preview_candidates:
-        if not Path(csv_name).exists():
+        if not _data(csv_name).exists():
             continue
         # Render in Google Sheet format: 1 owner row + relative rows beneath,
         # with Call Status populated from sms_history.csv so you can see at
@@ -354,7 +388,7 @@ export_to_sheets(records)
             import csv as _csv, re as _re
             from sheets_exporter import records_to_sheet_rows, HEADER_ROW
 
-            with open(csv_name, encoding="utf-8") as f:
+            with open(_data(csv_name), encoding="utf-8") as f:
                 records = list(_csv.DictReader(f))
 
             # Build phone -> sent_at lookup from sms_history for Call Status
@@ -362,8 +396,8 @@ export_to_sheets(records)
                 d = _re.sub(r"\D", "", p or "")
                 return d[-10:] if len(d) >= 10 else d
             sent_lookup = {}
-            if Path("sms_history.csv").exists():
-                with open("sms_history.csv", encoding="utf-8") as hf:
+            if _data("sms_history.csv").exists():
+                with open(_data("sms_history.csv"), encoding="utf-8") as hf:
                     for hr in _csv.DictReader(hf):
                         np = _norm(hr.get("phone_number", ""))
                         if np:

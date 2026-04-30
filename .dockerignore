@@ -1,0 +1,40 @@
+# Keep the image lean — exclude local dev junk and any data that should
+# live in the persistent /data volume on Render, not baked into the image.
+
+.git
+.gitignore
+.venv
+.venv-agents
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local secrets — set these as env vars in Render dashboard instead.
+.env
+.env.*
+*.pem
+credentials.json
+token.json
+gbp_token.json
+
+# Local-only data. Seed these into the Render persistent disk on first deploy
+# (see DEPLOY.md), don't copy into the image.
+input_pdfs/
+*.csv
+pipeline_state.json
+sms_history.csv
+
+# Editor/OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Claude session metadata — local only
+.claude/
+
+# Misc
+*.log

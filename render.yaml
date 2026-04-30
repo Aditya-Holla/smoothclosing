@@ -1,0 +1,47 @@
+# Render blueprint — `render deploy` will read this.
+# https://render.com/docs/blueprint-spec
+#
+# This brings up ONE web service backed by a 5GB persistent disk. The disk
+# survives redeploys, so leads.csv / sms_history.csv / pipeline_state.json
+# don't get wiped every time you push code.
+
+services:
+  - type: web
+    name: smoothclosing-dashboard
+    runtime: docker
+    region: oregon          # change if you prefer a different region
+    plan: standard          # 2GB RAM — Playwright + Chrome needs the headroom
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /_stcore/health
+    autoDeploy: true        # redeploy on push to main
+    disk:
+      name: smoothclosing-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      # All the secrets below get filled in via the Render dashboard —
+      # `sync: false` means "this is a secret, don't store the value here."
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RC_CLIENT_ID
+        sync: false
+      - key: RC_CLIENT_SECRET
+        sync: false
+      - key: RC_JWT_TOKEN
+        sync: false
+      - key: RC_FROM_NUMBER
+        sync: false
+      - key: SENDER_NAME
+        sync: false
+      - key: SKIPGENIE_EMAIL
+        sync: false
+      - key: SKIPGENIE_PASSWORD
+        sync: false
+      - key: RENTCAST_API_KEY
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: DISPOSITIONS_SHEET_ID
+        sync: false
