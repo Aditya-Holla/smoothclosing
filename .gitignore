@@ -54,3 +54,4 @@ venv/
 .idea/
 .vscode/
 *.swp
+resimpli_latest_*.csv

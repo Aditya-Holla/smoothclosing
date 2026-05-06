@@ -62,6 +62,7 @@ HEADER_ALIASES = {
     "entity":          ["Entity"],
     "county":          ["County"],
     "phones":          ["Phones", "Phone", "Phone Numbers"],
+    "address_phone":   ["Maybe", "Address Phone", "Addy Phone", "Property Phone"],
     "mail_street":     ["Mailing Street", "Mail Street"],
     "mail_city":       ["Mailing City", "Mail City"],
     "state":           ["State", "Mailing State"],
@@ -161,6 +162,20 @@ def ensure_logged_in(page, email=None, password=None) -> bool:
 
     logger.info("Login successful!")
     return True
+
+
+def _names_match(buyer_name: str, resident_name: str) -> bool:
+    """True if the buyer's first+last both appear as tokens in the resident
+    name (case-insensitive). Tolerates middle names, suffixes, and ordering
+    quirks so "John Michael Smith" matches buyer "John Smith".
+    """
+    if not buyer_name or not resident_name:
+        return False
+    buyer = parse_name(buyer_name)
+    if not buyer["first"] or not buyer["last"]:
+        return False
+    resident_tokens = {t.strip(",.").upper() for t in resident_name.split() if t.strip()}
+    return buyer["first"].upper() in resident_tokens and buyer["last"].upper() in resident_tokens
 
 
 def parse_name(full_name: str) -> dict:
@@ -361,7 +376,7 @@ def search_address(page, street: str, city: str = "", state: str = "TX", zip_cod
     resolved via Skip Genie's more precise Address Search tab first.
     Returns empty result if no street given or no match found.
     """
-    result = {"phone": "", "email": "", "address": "", "city": "", "state": "", "zip": ""}
+    result = {"phone": "", "email": "", "address": "", "city": "", "state": "", "zip": "", "resident_name": ""}
 
     if not street or not street.strip():
         return result
@@ -477,6 +492,12 @@ def search_address(page, street: str, city: str = "", state: str = "TX", zip_cod
     phone_match = re.search(r'\((\d{3})\)\s*(\d{3})-(\d{4})', page_text)
     if phone_match:
         result["phone"] = f"({phone_match.group(1)}) {phone_match.group(2)}-{phone_match.group(3)}"
+
+    # Resident name from the "Result : X of N NAME at AGE" header Skip Genie
+    # shows at the top of the profile. Used to match against buyer names.
+    name_match = re.search(r'Result\s*:\s*\d+\s+of\s+\d+\s+(.+?)\s+at\s+\d+', page_text)
+    if name_match:
+        result["resident_name"] = name_match.group(1).strip()
 
     for email_match in re.finditer(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', page_text, re.IGNORECASE):
         email = email_match.group(0)
@@ -644,7 +665,8 @@ def get_pending_rows(ws, include_traced: bool = False) -> list[dict]:
     return rows
 
 
-def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = "", col_map: dict = None):
+def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = "",
+                 address_phone: str = "", col_map: dict = None):
     """Write trace results back to the sheet using this tab's header layout.
 
     Pass col_map to avoid re-reading the header on every write (caller
@@ -666,12 +688,23 @@ def write_result(ws, row_num: int, phones_str: str, address: dict, email: str = 
         letter = _col_letter(col)
         updates.append({"range": f"{letter}{row_num}", "values": [[value]]})
 
-    _add("phones",      phones_str)
-    _add("mail_street", address.get("street", ""))
-    _add("mail_city",   address.get("city", ""))
-    _add("state",       address.get("state", ""))
-    _add("zip",         address.get("zip", ""))
-    _add("email",       email)
+    # phones_str is always written — it's the primary trace output and we
+    # want "no phone" rows to show that explicitly.
+    _add("phones", phones_str)
+
+    # Everything else: only overwrite when we have a new value. Skip Genie
+    # often returns nothing for a field, and clobbering existing sheet
+    # data with blanks would destroy info the team entered manually.
+    def _add_if(canonical: str, value: str):
+        if value and value.strip():
+            _add(canonical, value)
+
+    _add_if("address_phone", address_phone)
+    _add_if("mail_street",   address.get("street", ""))
+    _add_if("mail_city",     address.get("city", ""))
+    _add_if("state",         address.get("state", ""))
+    _add_if("zip",           address.get("zip", ""))
+    _add_if("email",         email)
 
     if not updates:
         logger.warning(f"  Nothing to write for row {row_num} in '{ws.title}' (no matching columns).")
@@ -754,11 +787,16 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None, retrace_all: bool = F
         phone_parts = []
         emails = []
         first_address = {"street": "", "city": "", "state": "", "zip": ""}
+        address_phone = ""  # raw phone at the mailing address, unmatched to any buyer
+
+        # Per-buyer phones pre-populated from the Address Search match.
+        # If Skip Genie's address lookup resolves to one of the buyer names,
+        # we reuse that phone and skip the redundant per-name search (one
+        # fewer Skip Genie credit).
+        addr_matched_phones: dict[str, str] = {}
 
         # Step 1: if the row has a mailing address, try Address Search first.
-        # This often resolves LLC rows more precisely than name search and
-        # can skip unnecessary per-name lookups when it succeeds.
-        addr_result = None
+        # This often resolves LLC rows more precisely than name search.
         if row.get("mail_street"):
             logger.info(
                 "  Address search first: %s, %s, %s %s",
@@ -772,11 +810,29 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None, retrace_all: bool = F
                 state=row.get("state", "TX"),
                 zip_code=row.get("zip", ""),
             )
-            if addr_result.get("phone"):
-                logger.info("    Phone (from address): %s", addr_result["phone"])
-                phone_parts.append(f"[ADDR] {addr_result['phone']}")
+            addr_phone = addr_result.get("phone", "")
+            resident = addr_result.get("resident_name", "")
+            if addr_phone:
+                logger.info("    Phone (from address): %s  Resident: %s", addr_phone, resident or "?")
             else:
                 logger.info("    Address search: no phone")
+
+            # Try to attribute the address phone to one of the row's buyers.
+            matched_buyer = None
+            if addr_phone and resident:
+                for buyer in row["names"]:
+                    if _names_match(buyer, resident):
+                        matched_buyer = buyer
+                        break
+
+            if matched_buyer:
+                addr_matched_phones[matched_buyer] = addr_phone
+                logger.info("    Matched address → buyer: %s", matched_buyer)
+            elif addr_phone:
+                # Nobody in the row matches — park it in the separate column.
+                address_phone = addr_phone
+                logger.info("    No buyer match — phone parked in Address Phone column")
+
             if addr_result.get("email"):
                 logger.info("    Email (from address): %s", addr_result["email"])
                 emails.append(addr_result["email"])
@@ -789,11 +845,14 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None, retrace_all: bool = F
                 }
             time.sleep(1)
 
-        # Step 2: always also trace each name. Name searches give us the
-        # specific phone-per-person (which Address Search can't — it only
-        # returns the current resident). If Address Search already found
-        # phones/email, those are kept and these name results are merged.
+        # Step 2: per-name search for each buyer, skipping any buyer already
+        # resolved by the Address Search above.
         for name in row["names"]:
+            if name in addr_matched_phones:
+                phone_parts.append(f"{name} {addr_matched_phones[name]}")
+                logger.info("  %s: using phone from address search (skipped name lookup)", name)
+                continue
+
             logger.info("  Tracing: %s", name)
             result = search_name(page, name)
 
@@ -821,8 +880,13 @@ def _trace_tab(page, ws, tab_name: str, limit: int = None, retrace_all: bool = F
         phones_str = "; ".join(phone_parts)
         email_str = "; ".join(emails)
         logger.info("  Result: %s", phones_str)
+        if address_phone:
+            logger.info("  Address Phone: %s", address_phone)
 
-        write_result(ws, row["row_num"], phones_str, first_address, email_str, col_map=col_map)
+        write_result(
+            ws, row["row_num"], phones_str, first_address, email_str,
+            address_phone=address_phone, col_map=col_map,
+        )
         logger.info("  Written to '%s' row %d", tab_name, row["row_num"])
 
     return len(pending)

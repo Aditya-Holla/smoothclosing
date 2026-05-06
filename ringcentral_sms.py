@@ -26,7 +26,9 @@ import os
 import random
 import re
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -231,6 +233,161 @@ def pick_relative_template() -> str:
 # Pipeline
 # ---------------------------------------------------------------------------
 
+def _process_lead(
+    rec: dict,
+    template: str,
+    sender_name: str,
+    dry_run: bool,
+    access_token: str,
+    from_number: str,
+    delay_seconds: float,
+    history: set,
+    history_lock: threading.Lock,
+    counters: dict,
+) -> dict:
+    """Send texts for one family (owner + relatives) and return the updated rec.
+
+    Called concurrently from a thread pool — one family per worker. The
+    intra-family 5-min delay before each relative text stays (carriers flag
+    rapid-fire SMS to related numbers as spam), but different families run
+    in parallel so the overall wall time is dominated by the family with
+    the most relatives rather than the sum across all families.
+    """
+    owner   = rec.get("owner_name", "Unknown")
+    address = rec.get("property_address", "")
+    notes = rec.get("notes", "")
+    if "name unreadable" in notes.lower() or not owner.strip():
+        rec["sms_status"] = "skipped"
+        rec["sms_error"] = "name unreadable — needs manual review"
+        logger.warning(f"  Skipping {owner or '(no name)'} — name unreadable, can't personalize text")
+        return rec
+
+    has_address = bool(address.strip())
+    if template is not None:
+        owner_template = template
+    elif not has_address:
+        owner_template = NO_PROPERTY_TEMPLATE
+    else:
+        owner_template = pick_template()
+    rec["sms_template"] = owner_template[:60] + "…"
+
+    owner_number = None
+    for i in range(1, 4):
+        num = str(rec.get(f"phone_{i}", "")).strip()
+        if num and num.lower() not in ("nan", ""):
+            owner_number = num
+            break
+
+    seen_numbers = set()
+    if owner_number:
+        seen_numbers.add(owner_number)
+
+    relative_numbers = []
+    for ri in range(1, 7):
+        for pi in range(1, 4):
+            num = str(rec.get(f"rel_{ri}_phone_{pi}", "")).strip()
+            if num and num.lower() not in ("nan", "") and num not in seen_numbers:
+                relative_numbers.append(num)
+                seen_numbers.add(num)
+                break
+
+    all_numbers = ([owner_number] if owner_number else []) + relative_numbers
+
+    statuses = []
+
+    if not all_numbers:
+        logger.warning(f"  No phone numbers for {owner} — skipping.")
+        rec["sms_status"] = "no_numbers"
+        rec["sms_error"]  = ""
+        return rec
+
+    # Dedup against history under lock so parallel workers don't race
+    # each other when the same number appears in two families' rows.
+    with history_lock:
+        new_numbers = []
+        dupe_numbers = []
+        for n in all_numbers:
+            key = _normalize_phone(n)
+            if key in history:
+                dupe_numbers.append(n)
+            else:
+                new_numbers.append(n)
+                history.add(key)  # reserve so sibling worker can't also claim it
+    for dupe in dupe_numbers:
+        statuses.append(f"{dupe}:already_texted")
+
+    if not new_numbers:
+        logger.info(f"  All numbers for {owner} already texted — skipping.")
+        rec["sms_status"] = "already_texted"
+        rec["sms_error"]  = ""
+        return rec
+
+    sent_any = False
+    for number in new_numbers:
+        is_relative = number in relative_numbers
+
+        if is_relative:
+            if template is not None:
+                number_template = template
+            elif not has_address:
+                number_template = RELATIVE_NO_PROPERTY_TEMPLATE
+            else:
+                number_template = pick_relative_template()
+        else:
+            number_template = owner_template
+        message = render_message(number_template, rec, sender_name)
+
+        # 5-min intra-family spacing: only apply if we actually sent a prior
+        # text in this family (sent_any). A failed send shouldn't force the
+        # next relative to wait 5 minutes.
+        if is_relative and sent_any:
+            wait = 300
+            if not dry_run:
+                logger.info(f"  Waiting {wait // 60}m before texting next relative for {owner}…")
+                time.sleep(wait)
+
+        label = f"{owner} @ {number}"
+        if dry_run:
+            is_rel = "(relative)" if is_relative else "(owner)"
+            logger.info(f"  [DRY RUN] Would text {label} {is_rel}:\n    {message[:80]}…")
+            statuses.append(f"{number}:dry_run")
+            sent_any = True
+            continue
+
+        try:
+            send_sms(access_token, from_number, number, message)
+            is_rel = "(relative)" if is_relative else "(owner)"
+            logger.info(f"  Sent → {label} {is_rel}")
+            statuses.append(f"{number}:sent")
+            with counters["lock"]:
+                counters["sent"] += 1
+            with history_lock:
+                append_sms_history(number, owner, address)
+            sent_any = True
+            time.sleep(delay_seconds)
+        except requests.HTTPError as e:
+            err = e.response.text if e.response else str(e)
+            logger.error(f"  Failed → {label}: {err}")
+            statuses.append(f"{number}:failed")
+            with counters["lock"]:
+                counters["failed"] += 1
+            # Roll back the history reservation since the send failed — lets
+            # a later run retry this number instead of skipping it as dupe.
+            with history_lock:
+                history.discard(_normalize_phone(number))
+        except Exception as e:
+            logger.error(f"  Failed → {label}: {e}")
+            statuses.append(f"{number}:failed")
+            with counters["lock"]:
+                counters["failed"] += 1
+            with history_lock:
+                history.discard(_normalize_phone(number))
+
+    rec["sms_status"] = " | ".join(statuses)
+    rec["sms_error"]  = ""
+    return rec
+
+
 def run(
     input_csv: str,
     output_csv: str,
@@ -238,6 +395,7 @@ def run(
     sender_name: str = "",
     dry_run: bool = False,
     delay_seconds: float = 1.5,
+    workers: int = 8,
 ) -> None:
     in_path = Path(input_csv)
     if not in_path.exists():
@@ -254,150 +412,46 @@ def run(
 
     logger.info(f"Loaded {len(records)} lead(s).")
 
-    # Load dedup history so we don't re-text anyone from a previous run.
     history = load_sms_history()
     logger.info(f"Loaded {len(history)} previously-texted number(s) from {SMS_HISTORY_CSV}.")
 
     access_token = None if dry_run else get_access_token()
 
-    results = []
-    sent_total = 0
-    failed_total = 0
+    # Parallel dispatch: one family per worker thread. Workers share the
+    # dedup history set + sms_history.csv writes under history_lock, and
+    # the sent/failed counters under counters["lock"].
+    history_lock = threading.Lock()
+    counters = {"sent": 0, "failed": 0, "lock": threading.Lock()}
 
-    for rec in records:
-        owner   = rec.get("owner_name", "Unknown")
-        address = rec.get("property_address", "")
-        # Skip leads with no usable name — can't send a personalized text
-        notes = rec.get("notes", "")
-        if "name unreadable" in notes.lower() or not owner.strip():
-            rec["sms_status"] = "skipped"
-            rec["sms_error"] = "name unreadable — needs manual review"
-            logger.warning(f"  Skipping {owner or '(no name)'} — name unreadable, can't personalize text")
-            results.append(rec)
-            continue
+    worker_count = max(1, min(workers, len(records) or 1))
+    logger.info(f"Sending with {worker_count} parallel worker(s) across {len(records)} famil(ies).")
 
-        # Template selection is now per-NUMBER (not per-record) so that
-        # owners get an "I saw your property..." pitch and relatives get a
-        # "Hi, I'm trying to reach [owner]..." message. See inside the send
-        # loop below. `rec["sms_template"]` captures the owner template for
-        # audit logging; relative templates are tracked per-send in the
-        # output file's sms_status column.
-        has_address = bool(address.strip())
-        if template is not None:
-            owner_template = template
-        elif not has_address:
-            owner_template = NO_PROPERTY_TEMPLATE
-        else:
-            owner_template = pick_template()
-        rec["sms_template"] = owner_template[:60] + "…"
-
-        # Owner: first valid phone only
-        owner_number = None
-        for i in range(1, 4):
-            num = str(rec.get(f"phone_{i}", "")).strip()
-            if num and num.lower() not in ("nan", ""):
-                owner_number = num
-                break
-
-        seen_numbers = set()
-        if owner_number:
-            seen_numbers.add(owner_number)
-
-        # All relatives with a phone: first valid phone per relative, skip dupes.
-        # Previously this was gated on rel_N_same_address == "yes", which
-        # restricted texts to household members only. Now we text every
-        # relative skipgenie found a phone for (parents, siblings, adult
-        # children at other addresses, etc).
-        relative_numbers = []
-        for ri in range(1, 7):
-            for pi in range(1, 4):
-                num = str(rec.get(f"rel_{ri}_phone_{pi}", "")).strip()
-                if num and num.lower() not in ("nan", "") and num not in seen_numbers:
-                    relative_numbers.append(num)
-                    seen_numbers.add(num)
-                    break  # first valid phone per relative only
-
-        all_numbers = ([owner_number] if owner_number else []) + relative_numbers
-
-        statuses = []
-
-        if not all_numbers:
-            logger.warning(f"  No phone numbers for {owner} — skipping.")
-            rec["sms_status"] = "no_numbers"
-            rec["sms_error"]  = ""
-            results.append(rec)
-            continue
-
-        # Dedup against history: drop any number already texted in a prior run.
-        new_numbers = [n for n in all_numbers if _normalize_phone(n) not in history]
-        dupe_numbers = [n for n in all_numbers if _normalize_phone(n) in history]
-        for dupe in dupe_numbers:
-            statuses.append(f"{dupe}:already_texted")
-
-        if not new_numbers:
-            logger.info(f"  All numbers for {owner} already texted — skipping.")
-            rec["sms_status"] = "already_texted"
-            rec["sms_error"]  = ""
-            results.append(rec)
-            continue
-
-        all_numbers = new_numbers
-
-        for number in all_numbers:
-            is_relative = number in relative_numbers
-
-            # Pick the right template for THIS number: owners get the direct
-            # pitch, relatives get a "trying to reach [owner]" message.
-            if is_relative:
-                if template is not None:
-                    number_template = template  # user-provided override still applies to all
-                elif not has_address:
-                    number_template = RELATIVE_NO_PROPERTY_TEMPLATE
-                else:
-                    number_template = pick_relative_template()
-            else:
-                number_template = owner_template
-            message = render_message(number_template, rec, sender_name)
-
-            # Wait 5 min before texting relatives in the same family
-            if is_relative and statuses:
-                wait = 300  # 5 minutes
-                if not dry_run:
-                    logger.info(f"  Waiting {wait // 60}m before texting relative…")
-                    time.sleep(wait)
-
-            label = f"{owner} @ {number}"
-            if dry_run:
-                is_rel = "(relative)" if is_relative else "(owner)"
-                logger.info(f"  [DRY RUN] Would text {label} {is_rel}:\n    {message[:80]}…")
-                statuses.append(f"{number}:dry_run")
-                continue
-
+    # Preserve input order in the output CSV even though threads finish
+    # out of order — each rec keeps its index, we sort by it at the end.
+    indexed_results = [None] * len(records)
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        future_to_idx = {
+            pool.submit(
+                _process_lead, rec, template, sender_name, dry_run,
+                access_token, from_number, delay_seconds,
+                history, history_lock, counters,
+            ): idx
+            for idx, rec in enumerate(records)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
             try:
-                send_sms(access_token, from_number, number, message)
-                is_rel = "(relative)" if is_relative else "(owner)"
-                logger.info(f"  Sent → {label} {is_rel}")
-                statuses.append(f"{number}:sent")
-                sent_total += 1
-                # Persist to history immediately so a crash mid-run doesn't
-                # lose track of who's already been texted. Also update the
-                # in-memory set so later rows in this run also respect it.
-                append_sms_history(number, owner, address)
-                history.add(_normalize_phone(number))
-                time.sleep(delay_seconds)   # small delay between sends
-            except requests.HTTPError as e:
-                err = e.response.text if e.response else str(e)
-                logger.error(f"  Failed → {label}: {err}")
-                statuses.append(f"{number}:failed")
-                failed_total += 1
+                indexed_results[idx] = future.result()
             except Exception as e:
-                logger.error(f"  Failed → {label}: {e}")
-                statuses.append(f"{number}:failed")
-                failed_total += 1
+                logger.error(f"Worker crashed on record {idx}: {e}")
+                rec = records[idx]
+                rec["sms_status"] = "failed"
+                rec["sms_error"] = str(e)
+                indexed_results[idx] = rec
 
-        rec["sms_status"] = " | ".join(statuses)
-        rec["sms_error"]  = ""
-        results.append(rec)
+    results = [r for r in indexed_results if r is not None]
+    sent_total = counters["sent"]
+    failed_total = counters["failed"]
 
     # Write output
     out_path = Path(output_csv)
@@ -429,7 +483,12 @@ def main() -> None:
     parser.add_argument("--dry-run",     action="store_true",
                         help="Print messages without actually sending.")
     parser.add_argument("--delay",       type=float, default=1.5,
-                        help="Seconds between sends (default 1.5).")
+                        help="Seconds between sends within a worker (default 1.5).")
+    parser.add_argument("--workers",     type=int, default=8,
+                        help="Concurrent families to process at once (default 8). "
+                             "The 5-min intra-family delay between relatives still "
+                             "applies, but families run in parallel so total wall "
+                             "time is bounded by the family with the most relatives.")
     parser.add_argument("--debug",       action="store_true")
     args = parser.parse_args()
 
@@ -450,6 +509,7 @@ def main() -> None:
         sender_name=args.sender_name,
         dry_run=args.dry_run,
         delay_seconds=args.delay,
+        workers=args.workers,
     )
 
 

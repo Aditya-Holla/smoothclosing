@@ -105,7 +105,715 @@ def count_csv_rows(path: str) -> int:
 
 st.title("🏠 SmoothClosing")
 
-tab_chat, tab_acq, tab_dispo, tab_aoh = st.tabs(["Chat", "Acquisitions", "Dispositions", "Heirship Affidavit"])
+tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli = st.tabs(
+    ["📺 TV Dashboard", "Chat", "Acquisitions", "Dispositions",
+     "Heirship Affidavit", "REsimpli Sync"]
+)
+
+# ===========================================================================
+# TV DASHBOARD — Big, glanceable display for an always-on TV
+# ===========================================================================
+
+with tab_tv:
+    # Auto-refresh every 60s so the TV stays current without human interaction
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=60_000, key="tv_dashboard_refresh")
+    except ImportError:
+        pass  # Optional dependency
+
+    # Read latest snapshots from disk
+    leads_path = _data("resimpli_latest_leads.csv")
+    inv_path = _data("resimpli_latest_inventory.csv")
+
+    if not leads_path.exists() and not inv_path.exists():
+        st.markdown(
+            "<div style='text-align:center; padding:80px; color:#888; "
+            "font-size:24px;'>📺 No data yet. Upload CSVs in the "
+            "<b>REsimpli Sync</b> tab to populate this dashboard.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        from resimpli_importer import parse_resimpli_csv
+        from inventory_importer import parse_inventory_csv, parse_dollar
+        from collections import defaultdict
+        from datetime import datetime
+
+        leads_rows = (
+            parse_resimpli_csv(leads_path) if leads_path.exists() else []
+        )
+        inv_rows = (
+            parse_inventory_csv(inv_path) if inv_path.exists() else []
+        )
+
+        # View toggle — segmented control at top
+        view = st.radio(
+            "View",
+            ["📊 Overview", "📝 Under Contract", "📦 Inventory"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="tv_view_selector",
+        )
+
+        # ---- Aggregate ---------------------------------------------------
+        pipeline_profit = sum(
+            parse_dollar(r.get("Expected Profit", "")) for r in leads_rows
+        )
+        inventory_profit = sum(
+            parse_dollar(r.get("Expected Profit", "")) for r in inv_rows
+        )
+        total_profit = pipeline_profit + inventory_profit
+
+        # Per-person aggregation. Match inventory to AM via Property ID first;
+        # fall back to "(team)" for unmatched inventory rows.
+        am_by_pid = {
+            r.get("Property ID"): r.get("Acquisition Manager", "").strip() or "(team)"
+            for r in leads_rows
+        }
+        per_person = defaultdict(lambda: {
+            "pipeline_profit": 0.0,
+            "pipeline_deals": 0,
+            "inventory_profit": 0.0,
+            "inventory_props": 0,
+            "total_profit": 0.0,
+        })
+        for r in leads_rows:
+            am = r.get("Acquisition Manager", "").strip() or "(team)"
+            p = parse_dollar(r.get("Expected Profit", ""))
+            per_person[am]["pipeline_deals"] += 1
+            per_person[am]["pipeline_profit"] += p
+            per_person[am]["total_profit"] += p
+        for r in inv_rows:
+            pid = r.get("Property ID")
+            am = am_by_pid.get(pid, "(team)")
+            p = parse_dollar(r.get("Expected Profit", ""))
+            per_person[am]["inventory_props"] += 1
+            per_person[am]["inventory_profit"] += p
+            per_person[am]["total_profit"] += p
+
+        # Sort and rank — but exclude "(team)" bucket (inventory items
+        # we couldn't attribute to a specific Acquisition Manager) from
+        # the leaderboard. They still count in the company-wide totals
+        # at the top.
+        ranked = sorted(
+            [(n, d) for n, d in per_person.items() if n != "(team)"],
+            key=lambda x: -x[1]["total_profit"],
+        )
+        max_total = ranked[0][1]["total_profit"] if ranked else 1
+        unattributed = per_person.get("(team)", None)
+
+        last_updated = datetime.now().strftime("%I:%M %p")
+
+        # Which sections render for which view
+        show_overview_hero = view == "📊 Overview"
+        show_uc_hero = view == "📝 Under Contract"
+        show_inv_hero = view == "📦 Inventory"
+        show_leaderboard = view in ("📊 Overview", "📝 Under Contract")
+        show_inventory_status = view in ("📊 Overview", "📦 Inventory")
+        show_inventory_detail = view == "📦 Inventory"
+        show_uc_detail = view == "📝 Under Contract"
+        show_top_deals = view in ("📊 Overview",)
+
+        # ---- HERO HEADER ---------------------------------------------
+        if show_overview_hero:
+            st.markdown(
+            f"""
+            <div style='
+                background: linear-gradient(135deg, #0f1729 0%, #1e3a5f 50%, #2d5f8f 100%);
+                padding: 36px 48px;
+                border-radius: 18px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                margin-bottom: 28px;
+                border: 1px solid #2d5f8f;
+            '>
+                <div style='display:flex; justify-content:space-between;
+                            align-items:flex-start; margin-bottom: 16px;'>
+                    <div style='font-size: 22px; color: #b8d4ea; letter-spacing: 2px;
+                                text-transform: uppercase; font-weight: 600;'>
+                        🏆 SmoothClosing — Live Pipeline
+                    </div>
+                    <div style='font-size: 16px; color: #7ba6cc;'>
+                        Updated {last_updated}
+                    </div>
+                </div>
+                <div style='font-size: 18px; color: #b8d4ea;
+                            text-transform: uppercase; letter-spacing: 1px;
+                            margin-bottom: 8px; font-weight: 500;'>
+                    Total Expected Profit
+                </div>
+                <div style='font-size: 96px; font-weight: 900; color: #ffffff;
+                            line-height: 1; letter-spacing: -2px;'>
+                    ${total_profit:,.0f}
+                </div>
+                <div style='display: flex; gap: 64px; margin-top: 24px;'>
+                    <div>
+                        <div style='font-size: 14px; color: #7ba6cc; text-transform: uppercase;
+                                    letter-spacing: 1px;'>Pipeline (Acquisitions)</div>
+                        <div style='font-size: 38px; font-weight: 700; color: #4CC9F0;'>
+                            ${pipeline_profit:,.0f}
+                        </div>
+                        <div style='font-size: 14px; color: #b8d4ea;'>
+                            {len(leads_rows)} active leads
+                        </div>
+                    </div>
+                    <div>
+                        <div style='font-size: 14px; color: #7ba6cc; text-transform: uppercase;
+                                    letter-spacing: 1px;'>Inventory (Portfolio)</div>
+                        <div style='font-size: 38px; font-weight: 700; color: #F8961E;'>
+                            ${inventory_profit:,.0f}
+                        </div>
+                        <div style='font-size: 14px; color: #b8d4ea;'>
+                            {len(inv_rows)} properties owned
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ---- UNDER CONTRACT HERO -----------------------------------------
+        if show_uc_hero:
+            uc_count = len(leads_rows)
+            uc_total_contract = sum(
+                parse_dollar(r.get("Under Contract Price", ""))
+                for r in leads_rows
+            )
+            avg_uc_profit = (
+                pipeline_profit / uc_count if uc_count else 0
+            )
+            st.markdown(
+                f"""
+                <div style='
+                    background: linear-gradient(135deg, #0f1729 0%, #1e3a5f 50%, #4CC9F0 200%);
+                    padding: 36px 48px;
+                    border-radius: 18px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                    margin-bottom: 28px;
+                    border-left: 8px solid #4CC9F0;
+                '>
+                    <div style='display:flex; justify-content:space-between;
+                                align-items:flex-start; margin-bottom: 16px;'>
+                        <div style='font-size: 22px; color: #b8d4ea;
+                                    letter-spacing: 2px; text-transform: uppercase;
+                                    font-weight: 600;'>
+                            📝 Under Contract — Pipeline
+                        </div>
+                        <div style='font-size: 16px; color: #7ba6cc;'>
+                            Updated {last_updated}
+                        </div>
+                    </div>
+                    <div style='font-size: 18px; color: #b8d4ea;
+                                text-transform: uppercase; letter-spacing: 1px;
+                                margin-bottom: 8px;'>
+                        Expected Profit on Active Deals
+                    </div>
+                    <div style='font-size: 96px; font-weight: 900; color: #ffffff;
+                                line-height: 1; letter-spacing: -2px;'>
+                        ${pipeline_profit:,.0f}
+                    </div>
+                    <div style='display: flex; gap: 64px; margin-top: 24px;'>
+                        <div>
+                            <div style='font-size: 14px; color: #7ba6cc;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Active Deals
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #4CC9F0;'>{uc_count}</div>
+                        </div>
+                        <div>
+                            <div style='font-size: 14px; color: #7ba6cc;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Total Under Contract
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #4CC9F0;'>${uc_total_contract:,.0f}</div>
+                        </div>
+                        <div>
+                            <div style='font-size: 14px; color: #7ba6cc;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Avg Profit / Deal
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #4CC9F0;'>${avg_uc_profit:,.0f}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- INVENTORY HERO ----------------------------------------------
+        if show_inv_hero:
+            inv_count = len(inv_rows)
+            inv_top_deal_profit = max(
+                (parse_dollar(r.get("Expected Profit", "")) for r in inv_rows),
+                default=0,
+            )
+            avg_inv_profit = (
+                inventory_profit / inv_count if inv_count else 0
+            )
+            st.markdown(
+                f"""
+                <div style='
+                    background: linear-gradient(135deg, #0f1729 0%, #5f3a1e 50%, #F8961E 200%);
+                    padding: 36px 48px;
+                    border-radius: 18px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                    margin-bottom: 28px;
+                    border-left: 8px solid #F8961E;
+                '>
+                    <div style='display:flex; justify-content:space-between;
+                                align-items:flex-start; margin-bottom: 16px;'>
+                        <div style='font-size: 22px; color: #f0d5b8;
+                                    letter-spacing: 2px; text-transform: uppercase;
+                                    font-weight: 600;'>
+                            📦 Inventory — Active Portfolio
+                        </div>
+                        <div style='font-size: 16px; color: #cc9b7b;'>
+                            Updated {last_updated}
+                        </div>
+                    </div>
+                    <div style='font-size: 18px; color: #f0d5b8;
+                                text-transform: uppercase; letter-spacing: 1px;
+                                margin-bottom: 8px;'>
+                        Expected Profit on Inventory
+                    </div>
+                    <div style='font-size: 96px; font-weight: 900; color: #ffffff;
+                                line-height: 1; letter-spacing: -2px;'>
+                        ${inventory_profit:,.0f}
+                    </div>
+                    <div style='display: flex; gap: 64px; margin-top: 24px;'>
+                        <div>
+                            <div style='font-size: 14px; color: #cc9b7b;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Properties
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #F8961E;'>{inv_count}</div>
+                        </div>
+                        <div>
+                            <div style='font-size: 14px; color: #cc9b7b;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Avg Profit / Property
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #F8961E;'>${avg_inv_profit:,.0f}</div>
+                        </div>
+                        <div>
+                            <div style='font-size: 14px; color: #cc9b7b;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                Top Deal
+                            </div>
+                            <div style='font-size: 38px; font-weight: 700;
+                                        color: #F8961E;'>${inv_top_deal_profit:,.0f}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- LEADERBOARD -------------------------------------------------
+        if show_leaderboard:
+            st.markdown(
+                "<div style='font-size:34px; font-weight:800; margin: 28px 0 16px 0;'>"
+                "🏅 Team Leaderboard</div>",
+                unsafe_allow_html=True,
+            )
+
+        medals = ["🥇", "🥈", "🥉"]
+        person_colors = ["#FFD700", "#C0C0C0", "#CD7F32",
+                         "#4CC9F0", "#90BE6D", "#9B5DE5", "#F94144"]
+
+        for i, (name, data) in enumerate(ranked if show_leaderboard else []):
+            medal = medals[i] if i < 3 else f"  {i+1}."
+            color = person_colors[i % len(person_colors)]
+            pct = (
+                (data["total_profit"] / max_total * 100) if max_total else 0
+            )
+            initials = "".join(
+                w[0].upper() for w in name.split() if w
+            )[:2] or "?"
+
+            st.markdown(
+                f"""
+                <div style='
+                    background: linear-gradient(90deg, rgba(30,58,95,0.5) 0%,
+                                                       rgba(30,58,95,0.1) 100%);
+                    padding: 22px 28px;
+                    border-radius: 14px;
+                    margin-bottom: 14px;
+                    border-left: 6px solid {color};
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                '>
+                    <div style='display: flex; align-items: center;
+                                justify-content: space-between;'>
+                        <div style='display: flex; align-items: center; gap: 24px;'>
+                            <div style='font-size: 42px; font-weight: 700; min-width: 60px;'>
+                                {medal}
+                            </div>
+                            <div style='
+                                width: 64px; height: 64px; border-radius: 50%;
+                                background: {color}; color: #0f1729;
+                                display: flex; align-items: center; justify-content: center;
+                                font-size: 26px; font-weight: 800;
+                            '>{initials}</div>
+                            <div>
+                                <div style='font-size: 30px; font-weight: 700;
+                                            color: #ffffff; line-height: 1.1;'>
+                                    {name}
+                                </div>
+                                <div style='font-size: 14px; color: #b8d4ea;
+                                            margin-top: 4px;'>
+                                    {data["pipeline_deals"]} pipeline deal(s)
+                                    • {data["inventory_props"]} inventory prop(s)
+                                </div>
+                            </div>
+                        </div>
+                        <div style='text-align: right;'>
+                            <div style='font-size: 44px; font-weight: 900;
+                                        color: {color}; line-height: 1;'>
+                                ${data["total_profit"]:,.0f}
+                            </div>
+                            <div style='font-size: 13px; color: #7ba6cc;
+                                        margin-top: 4px;'>
+                                pipeline ${data["pipeline_profit"]:,.0f}
+                                • inventory ${data["inventory_profit"]:,.0f}
+                            </div>
+                        </div>
+                    </div>
+                    <div style='
+                        margin-top: 14px;
+                        background: rgba(255,255,255,0.08);
+                        border-radius: 8px;
+                        height: 12px;
+                        overflow: hidden;
+                    '>
+                        <div style='
+                            width: {pct:.1f}%;
+                            height: 100%;
+                            background: linear-gradient(90deg, {color} 0%,
+                                                              {color}99 100%);
+                            border-radius: 8px;
+                        '></div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Note about unattributed inventory (not tied to any AM via Property ID)
+        if show_leaderboard and unattributed and unattributed["inventory_props"]:
+            st.markdown(
+                f"""
+                <div style='
+                    background: rgba(87,117,144,0.18);
+                    padding: 12px 20px;
+                    border-radius: 10px;
+                    border-left: 4px solid #577590;
+                    font-size: 14px;
+                    color: #b8d4ea;
+                    margin-top: 8px;
+                '>
+                    <b>{unattributed["inventory_props"]} inventory propert(ies)
+                    totaling ${unattributed["inventory_profit"]:,.0f}</b>
+                    aren't tied to a specific Acquisition Manager (no matching
+                    Property ID in the leads export). They count in the company
+                    total above but not in the leaderboard.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- INVENTORY STATUS BREAKDOWN ----------------------------------
+        if inv_rows and show_inventory_status:
+            from inventory_importer import summarize as inv_summarize
+            inv_stats = inv_summarize(inv_rows)
+            st.markdown(
+                "<div style='font-size:34px; font-weight:800; margin: 36px 0 16px 0;'>"
+                "📦 Inventory Status</div>",
+                unsafe_allow_html=True,
+            )
+            status_colors = {
+                "Listed For Sale": "#4CC9F0",
+                "Under Rehab": "#F8961E",
+                "Under Contract": "#9B5DE5",
+                "New Inventory": "#90BE6D",
+            }
+            cols = st.columns(min(len(inv_stats["by_status"]), 4) or 1)
+            for i, (status, data) in enumerate(inv_stats["by_status"].items()):
+                color = status_colors.get(status, "#577590")
+                with cols[i % len(cols)]:
+                    st.markdown(
+                        f"""
+                        <div style='
+                            background: rgba(30,58,95,0.4);
+                            padding: 24px;
+                            border-radius: 12px;
+                            border-top: 4px solid {color};
+                            text-align: center;
+                            min-height: 160px;
+                        '>
+                            <div style='font-size: 14px; color: #b8d4ea;
+                                        text-transform: uppercase; letter-spacing: 1px;'>
+                                {status}
+                            </div>
+                            <div style='font-size: 56px; font-weight: 900; color: {color};
+                                        line-height: 1.1; margin: 8px 0;'>
+                                {data["count"]}
+                            </div>
+                            <div style='font-size: 22px; font-weight: 700; color: #ffffff;'>
+                                ${data["profit"]:,.0f}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+        # ---- TOP DEALS ---------------------------------------------------
+        all_deals = [] if show_top_deals else None
+        if not show_top_deals:
+            top_deals = []
+        for r in (leads_rows if show_top_deals else []):
+            all_deals.append({
+                "address": r.get("Property Street Address", ""),
+                "city": r.get("Property City", "").strip(),
+                "profit": parse_dollar(r.get("Expected Profit", "")),
+                "status": r.get("Lead Status", ""),
+                "kind": "Pipeline",
+            })
+        for r in (inv_rows if show_top_deals else []):
+            all_deals.append({
+                "address": r.get("Property Street Address", ""),
+                "city": r.get("Property City", "").strip(),
+                "profit": parse_dollar(r.get("Expected Profit", "")),
+                "status": r.get("Property Status", ""),
+                "kind": "Inventory",
+            })
+        if show_top_deals:
+            top_deals = sorted(all_deals, key=lambda d: -d["profit"])[:8]
+
+        if top_deals:
+            st.markdown(
+                "<div style='font-size:34px; font-weight:800; margin: 36px 0 16px 0;'>"
+                "🏆 Top Deals</div>",
+                unsafe_allow_html=True,
+            )
+            rows_html = ""
+            for i, d in enumerate(top_deals):
+                kind_color = "#4CC9F0" if d["kind"] == "Pipeline" else "#F8961E"
+                rows_html += f"""
+                <tr style='border-bottom: 1px solid rgba(255,255,255,0.08);'>
+                    <td style='padding: 14px 8px; font-size: 22px; font-weight: 700;
+                               color: #b8d4ea; width: 50px;'>{i+1}</td>
+                    <td style='padding: 14px 8px; font-size: 22px; font-weight: 600;
+                               color: #ffffff;'>
+                        {d["address"]}{', ' + d["city"] if d["city"] else ''}
+                    </td>
+                    <td style='padding: 14px 8px; font-size: 14px;'>
+                        <span style='background: {kind_color}; color: #0f1729;
+                                     padding: 4px 10px; border-radius: 6px;
+                                     font-weight: 700;'>{d["kind"]}</span>
+                    </td>
+                    <td style='padding: 14px 8px; font-size: 16px; color: #b8d4ea;'>
+                        {d["status"]}
+                    </td>
+                    <td style='padding: 14px 8px; font-size: 26px; font-weight: 900;
+                               color: #4CC9F0; text-align: right;'>
+                        ${d["profit"]:,.0f}
+                    </td>
+                </tr>
+                """
+            st.markdown(
+                f"""
+                <table style='width: 100%; border-collapse: collapse;
+                              background: rgba(30,58,95,0.3);
+                              border-radius: 12px; overflow: hidden;'>
+                    {rows_html}
+                </table>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- UNDER CONTRACT DEAL DETAIL TABLE ----------------------------
+        if show_uc_detail and leads_rows:
+            st.markdown(
+                "<div style='font-size:34px; font-weight:800; "
+                "margin: 36px 0 16px 0;'>📝 All Under-Contract Deals</div>",
+                unsafe_allow_html=True,
+            )
+            uc_sorted = sorted(
+                leads_rows,
+                key=lambda r: -parse_dollar(r.get("Expected Profit", "")),
+            )
+            rows_html = ""
+            for r in uc_sorted:
+                profit = parse_dollar(r.get("Expected Profit", ""))
+                contract = parse_dollar(r.get("Under Contract Price", ""))
+                am = r.get("Acquisition Manager", "").strip() or "(team)"
+                addr = r.get("Property Street Address", "")
+                city = r.get("Property City", "").strip()
+                lead_name = (
+                    f"{r.get('First Name','')} {r.get('Last Name','')}"
+                ).strip()
+                close_date = r.get("Schedule Closing Date", "")
+                rows_html += f"""
+                <tr style='border-bottom: 1px solid rgba(255,255,255,0.08);'>
+                    <td style='padding: 14px 12px; font-size: 22px; font-weight: 600;
+                               color: #ffffff;'>
+                        {addr}{', ' + city if city else ''}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 16px; color: #b8d4ea;'>
+                        {lead_name}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 16px; color: #4CC9F0;
+                               font-weight: 600;'>
+                        {am}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 16px; color: #b8d4ea;'>
+                        {close_date}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 18px; color: #b8d4ea;
+                               text-align: right;'>
+                        ${contract:,.0f}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 26px; font-weight: 900;
+                               color: #4CC9F0; text-align: right;'>
+                        ${profit:,.0f}
+                    </td>
+                </tr>
+                """
+            st.markdown(
+                f"""
+                <table style='width: 100%; border-collapse: collapse;
+                              background: rgba(30,58,95,0.3);
+                              border-radius: 12px; overflow: hidden;'>
+                    <thead>
+                        <tr style='background: rgba(76,201,240,0.15);'>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Property</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Lead</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Acq Manager</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Close Date</th>
+                            <th style='padding: 14px 12px; text-align: right;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Contract</th>
+                            <th style='padding: 14px 12px; text-align: right;
+                                       font-size: 13px; color: #7ba6cc;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Expected Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>{rows_html}</tbody>
+                </table>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- INVENTORY DEAL DETAIL TABLE ---------------------------------
+        if show_inventory_detail and inv_rows:
+            st.markdown(
+                "<div style='font-size:34px; font-weight:800; "
+                "margin: 36px 0 16px 0;'>📦 All Inventory Properties</div>",
+                unsafe_allow_html=True,
+            )
+            inv_sorted = sorted(
+                inv_rows,
+                key=lambda r: -parse_dollar(r.get("Expected Profit", "")),
+            )
+            status_colors = {
+                "Listed For Sale": "#4CC9F0",
+                "Under Rehab": "#F8961E",
+                "Under Contract": "#9B5DE5",
+                "New Inventory": "#90BE6D",
+            }
+            rows_html = ""
+            for r in inv_sorted:
+                profit = parse_dollar(r.get("Expected Profit", ""))
+                addr = r.get("Property Street Address", "")
+                city = r.get("Property City", "").strip()
+                status = r.get("Property Status", "")
+                ptype = r.get("Project Type", "")
+                purchase_date = r.get("Purchase Date", "")
+                color = status_colors.get(status, "#577590")
+                rows_html += f"""
+                <tr style='border-bottom: 1px solid rgba(255,255,255,0.08);'>
+                    <td style='padding: 14px 12px; font-size: 22px; font-weight: 600;
+                               color: #ffffff;'>
+                        {addr}{', ' + city if city else ''}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 14px;'>
+                        <span style='background: {color}; color: #0f1729;
+                                     padding: 4px 10px; border-radius: 6px;
+                                     font-weight: 700;'>{status}</span>
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 16px; color: #b8d4ea;'>
+                        {ptype}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 16px; color: #b8d4ea;'>
+                        {purchase_date}
+                    </td>
+                    <td style='padding: 14px 12px; font-size: 26px; font-weight: 900;
+                               color: #F8961E; text-align: right;'>
+                        ${profit:,.0f}
+                    </td>
+                </tr>
+                """
+            st.markdown(
+                f"""
+                <table style='width: 100%; border-collapse: collapse;
+                              background: rgba(95,58,30,0.2);
+                              border-radius: 12px; overflow: hidden;'>
+                    <thead>
+                        <tr style='background: rgba(248,150,30,0.15);'>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #cc9b7b;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Property</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #cc9b7b;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Status</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #cc9b7b;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Project Type</th>
+                            <th style='padding: 14px 12px; text-align: left;
+                                       font-size: 13px; color: #cc9b7b;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Purchased</th>
+                            <th style='padding: 14px 12px; text-align: right;
+                                       font-size: 13px; color: #cc9b7b;
+                                       text-transform: uppercase; letter-spacing: 1px;'>
+                                Expected Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>{rows_html}</tbody>
+                </table>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            "<div style='text-align:center; padding:30px; color:#577590; "
+            "font-size:13px;'>Auto-refreshes every 60 seconds — "
+            "data sourced from the latest CSV uploads in the REsimpli Sync tab.</div>",
+            unsafe_allow_html=True,
+        )
+
 
 # ===========================================================================
 # CHAT TAB — Talk to the orchestrator
@@ -572,23 +1280,43 @@ with tab_aoh:
     st.subheader("Decedent Information")
     col_d1, col_d2 = st.columns(2)
     with col_d1:
-        decedent_full_name = st.text_input("Decedent Full Name", key="aoh_dec_name",
-                                            placeholder="e.g. Ethel Mae Hafernik Hummell")
-        decedent_aka = st.text_input("Decedent AKA (leave blank if none)", key="aoh_dec_aka",
-                                      placeholder="e.g. Ethel M. Hummell")
-        decedent_dob = st.text_input("Decedent Date of Birth", key="aoh_dec_dob",
-                                      placeholder="MM/DD/YYYY")
+        decedent_full_name = st.text_input(
+            "Decedent Full Name", key="aoh_dec_name",
+            placeholder="e.g. Ethel Mae Hafernik Hummell",
+        )
+        decedent_aka = st.text_input(
+            "Decedent AKA (blank if none)", key="aoh_dec_aka",
+            placeholder="e.g. Ethel M. Hummell",
+        )
+        decedent_dob = st.text_input(
+            "Decedent Date of Birth", key="aoh_dec_dob", placeholder="MM/DD/YYYY",
+        )
+        decedent_pronoun = st.selectbox(
+            "Decedent Pronoun (for 'his/her home' phrasing)",
+            ["she", "he"], key="aoh_dec_pronoun",
+        )
     with col_d2:
-        death_date = st.text_input("Date of Death", key="aoh_death_date",
-                                    placeholder="e.g. October 6, 2010")
+        death_date = st.text_input(
+            "Date of Death", key="aoh_death_date",
+            placeholder="e.g. October 6, 2010",
+        )
         death_city = st.text_input("City of Death", key="aoh_death_city", value="Austin")
-        death_county = st.text_input("County of Death", key="aoh_death_county", value="Travis")
+        death_county = st.text_input(
+            "County of Death", key="aoh_death_county", value="Travis",
+            help="Leave blank if death occurred outside Texas.",
+        )
+        death_state = st.text_input(
+            "State of Death", key="aoh_death_state", value="Texas",
+            help="Override if decedent died outside Texas.",
+        )
 
     st.caption("Decedent's Residential Address at Time of Death")
     col_r1, col_r2 = st.columns(2)
     with col_r1:
-        res_address = st.text_input("Street Address", key="aoh_res_addr",
-                                     placeholder="e.g. 8710 Colonial Dr.")
+        res_address = st.text_input(
+            "Street Address", key="aoh_res_addr",
+            placeholder="e.g. 8710 Colonial Dr.",
+        )
         res_city = st.text_input("City", key="aoh_res_city", value="Austin")
         res_state = st.text_input("State", key="aoh_res_state", value="Texas")
     with col_r2:
@@ -598,22 +1326,47 @@ with tab_aoh:
     st.divider()
 
     # -----------------------------------------------------------------------
-    # Section 2: Affiant (family member)
+    # Section 2: Affiant
     # -----------------------------------------------------------------------
-    st.subheader("Affiant (Family Member)")
+    st.subheader("Affiant (Family Member or Person Familiar with History)")
     col_a1, col_a2 = st.columns(2)
     with col_a1:
-        aff_name = st.text_input("Affiant Name", key="aoh_aff_name",
-                                  placeholder="e.g. Norman Hummell")
-        aff_aka = st.text_input("Affiant AKA (leave blank if none)", key="aoh_aff_aka",
-                                 placeholder="e.g. Norman S. Hummell")
-        aff_relationship = st.text_input("Relationship to Decedent", key="aoh_aff_rel",
-                                          placeholder="e.g. husband")
-        aff_years = st.text_input("Years Known Decedent", key="aoh_aff_years",
-                                   placeholder="e.g. forty-eight (48)")
+        aff_name = st.text_input(
+            "Affiant Name", key="aoh_aff_name", placeholder="e.g. Norman Hummell",
+        )
+        aff_aka = st.text_input(
+            "Affiant AKA (blank if none)", key="aoh_aff_aka",
+            placeholder="e.g. Norman S. Hummell",
+        )
+        st.caption(
+            "Intro will read: \"I [verb] [article] [relationship] of the Decedent "
+            "and knew Decedent for [duration].\""
+        )
+        col_av1, col_av2 = st.columns(2)
+        with col_av1:
+            aff_verb = st.selectbox(
+                "Verb", ["was", "am"], key="aoh_aff_verb",
+                help="'am' for current relatives still living (e.g. son), "
+                     "'was' for spouses or non-family",
+            )
+        with col_av2:
+            aff_article = st.selectbox(
+                "Article", ["the", "a"], key="aoh_aff_article",
+                help="'the' for family (the son), 'a' for friends (a friend)",
+            )
+        aff_relationship = st.text_input(
+            "Relationship", key="aoh_aff_rel",
+            placeholder="e.g. son, husband, half-brother, family friend",
+        )
+        aff_duration = st.text_input(
+            "Duration phrase", key="aoh_aff_duration",
+            placeholder="e.g. 'more than forty-eight (48) years' OR 'my entire life until her death'",
+        )
     with col_a2:
-        aff_address = st.text_input("Street Address", key="aoh_aff_addr",
-                                     placeholder="e.g. 8710 Colonial Dr.")
+        aff_address = st.text_input(
+            "Street Address", key="aoh_aff_addr",
+            placeholder="e.g. 8710 Colonial Dr.",
+        )
         aff_city = st.text_input("City", key="aoh_aff_city", value="Austin")
         aff_county = st.text_input("County", key="aoh_aff_county", value="Travis")
         aff_state = st.text_input("State", key="aoh_aff_state", value="Texas")
@@ -624,34 +1377,42 @@ with tab_aoh:
     # -----------------------------------------------------------------------
     # Section 3 & 4: Witnesses
     # -----------------------------------------------------------------------
-    st.subheader("Witnesses (2 required — not related to decedent, knew decedent 10+ years)")
+    st.subheader("Witnesses (2 — not related to decedent, knew decedent 10+ years)")
     col_w1, col_w2 = st.columns(2)
 
-    with col_w1:
-        st.caption("Witness 1")
-        w1_name = st.text_input("Name", key="aoh_w1_name")
-        w1_address = st.text_input("Street Address", key="aoh_w1_addr")
-        w1_city = st.text_input("City", key="aoh_w1_city")
-        w1_county = st.text_input("County", key="aoh_w1_county")
-        w1_state = st.text_input("State", key="aoh_w1_state", value="Texas")
-        w1_zip = st.text_input("Zip", key="aoh_w1_zip")
-        w1_relationship = st.text_input("Relationship", key="aoh_w1_rel",
-                                         placeholder="e.g. friend")
-        w1_years = st.text_input("Years Known", key="aoh_w1_years",
-                                  placeholder="e.g. fifteen (15)")
+    def _witness_inputs(prefix: str, label: str):
+        st.caption(label)
+        name = st.text_input("Name", key=f"aoh_{prefix}_name")
+        address = st.text_input("Street Address", key=f"aoh_{prefix}_addr")
+        city = st.text_input("City", key=f"aoh_{prefix}_city")
+        county = st.text_input("County", key=f"aoh_{prefix}_county")
+        state = st.text_input("State", key=f"aoh_{prefix}_state", value="Texas")
+        zip_ = st.text_input("Zip", key=f"aoh_{prefix}_zip")
+        c1, c2 = st.columns(2)
+        with c1:
+            verb = st.selectbox("Verb", ["was", "am"], key=f"aoh_{prefix}_verb")
+        with c2:
+            article = st.selectbox("Article", ["a", "the"], key=f"aoh_{prefix}_article")
+        relationship = st.text_input(
+            "Relationship", key=f"aoh_{prefix}_rel",
+            placeholder="e.g. friend, neighbor, family friend",
+        )
+        duration = st.text_input(
+            "Duration phrase", key=f"aoh_{prefix}_duration",
+            placeholder="e.g. 'more than fifteen (15) years'",
+        )
+        return {
+            "name": name, "address": address, "city": city, "county": county,
+            "state": state, "zip": zip_, "verb": verb, "article": article,
+            "relationship": relationship, "duration": duration,
+        }
 
+    with col_w1:
+        w1_data = _witness_inputs("w1", "Witness 1")
     with col_w2:
-        st.caption("Witness 2")
-        w2_name = st.text_input("Name", key="aoh_w2_name")
-        w2_address = st.text_input("Street Address", key="aoh_w2_addr")
-        w2_city = st.text_input("City", key="aoh_w2_city")
-        w2_county = st.text_input("County", key="aoh_w2_county")
-        w2_state = st.text_input("State", key="aoh_w2_state", value="Texas")
-        w2_zip = st.text_input("Zip", key="aoh_w2_zip")
-        w2_relationship = st.text_input("Relationship", key="aoh_w2_rel",
-                                         placeholder="e.g. friend")
-        w2_years = st.text_input("Years Known", key="aoh_w2_years",
-                                  placeholder="e.g. fifteen (15)")
+        w2_data = _witness_inputs("w2", "Witness 2")
+
+    w1_name = w1_data["name"]; w2_name = w2_data["name"]
 
     st.divider()
 
@@ -659,124 +1420,341 @@ with tab_aoh:
     # Section 5: Marital History
     # -----------------------------------------------------------------------
     st.subheader("Marital History")
-    num_marriages = st.number_input(
-        "Number of marriages", min_value=0, max_value=5, value=1, key="aoh_num_marriages_input",
+    never_married = st.checkbox(
+        "Decedent was never married", value=False, key="aoh_never_married",
     )
     marriages_data = []
-    for i in range(num_marriages):
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            m_date = st.text_input(f"Marriage {i+1} Date", key=f"aoh_m{i}_date",
-                                    placeholder="MM/DD/YYYY")
-        with col_m2:
-            m_spouse = st.text_input(f"Spouse Name", key=f"aoh_m{i}_spouse")
-        with col_m3:
-            m_spouse_aka = st.text_input(f"Spouse AKA", key=f"aoh_m{i}_spouse_aka",
-                                          placeholder="leave blank if none")
-        marriages_data.append({"date": m_date, "spouse_name": m_spouse, "spouse_aka": m_spouse_aka})
-
-    divorced = st.selectbox("Was decedent divorced?", ["No", "Yes"], key="aoh_divorced")
-    divorce_dates = []
-    if divorced == "Yes":
-        num_divorces = st.number_input("Number of divorces", min_value=1, max_value=5, value=1, key="aoh_num_div")
-        for i in range(num_divorces):
-            dd = st.text_input(f"Divorce {i+1} Date", key=f"aoh_div{i}_date")
-            divorce_dates.append(dd)
-
-    st.caption("Remarriages (if any)")
-    num_remarriages = st.number_input(
-        "Number of remarriages", min_value=0, max_value=5, value=0, key="aoh_num_remarriages",
-    )
-    remarriages_data = []
-    for i in range(num_remarriages):
-        col_rm1, col_rm2, col_rm3 = st.columns(3)
-        with col_rm1:
-            rm_date = st.text_input(f"Remarriage {i+1} Date", key=f"aoh_rm{i}_date",
-                                     placeholder="MM/DD/YYYY")
-        with col_rm2:
-            rm_spouse = st.text_input(f"Spouse Name", key=f"aoh_rm{i}_spouse")
-        with col_rm3:
-            rm_spouse_aka = st.text_input(f"Spouse AKA", key=f"aoh_rm{i}_spouse_aka",
-                                           placeholder="leave blank if none")
-        remarriages_data.append({"date": rm_date, "spouse_name": rm_spouse, "spouse_aka": rm_spouse_aka})
+    if not never_married:
+        num_marriages = st.number_input(
+            "Number of marriages", min_value=0, max_value=5, value=1,
+            key="aoh_num_marriages_input",
+        )
+        for i in range(num_marriages):
+            st.markdown(f"**Marriage {i+1}**")
+            col_m1, col_m2, col_m3 = st.columns(3)
+            with col_m1:
+                m_date = st.text_input(
+                    "Date Married", key=f"aoh_m{i}_date",
+                    placeholder="e.g. May 20, 1962",
+                )
+            with col_m2:
+                m_spouse = st.text_input("Spouse Name", key=f"aoh_m{i}_spouse")
+            with col_m3:
+                m_spouse_aka = st.text_input(
+                    "Spouse AKA", key=f"aoh_m{i}_spouse_aka",
+                    placeholder="blank if none",
+                )
+            col_e1, col_e2, col_e3 = st.columns(3)
+            with col_e1:
+                m_ended = st.selectbox(
+                    "How marriage ended",
+                    ["Decedent's death (final spouse)",
+                     "Spouse's death", "Divorce"],
+                    key=f"aoh_m{i}_ended",
+                )
+            with col_e2:
+                m_end_date = st.text_input(
+                    "End Date (divorce/spouse-death)", key=f"aoh_m{i}_end_date",
+                    placeholder="blank if ended by Decedent's death",
+                )
+            with col_e3:
+                m_spouse_pronoun = st.selectbox(
+                    "Spouse Pronoun (for 'his/her death')",
+                    ["his", "her"], key=f"aoh_m{i}_spouse_pron",
+                )
+            ended_map = {
+                "Decedent's death (final spouse)": "death_decedent",
+                "Spouse's death": "death_spouse",
+                "Divorce": "divorce",
+            }
+            marriages_data.append({
+                "date": m_date,
+                "spouse_name": m_spouse,
+                "spouse_aka": m_spouse_aka,
+                "ended_by": ended_map[m_ended],
+                "end_date": m_end_date,
+                "spouse_pronoun": m_spouse_pronoun,
+            })
 
     st.divider()
 
     # -----------------------------------------------------------------------
-    # Section 6: Children
+    # Section 6: Children — grouped by other parent
     # -----------------------------------------------------------------------
     st.subheader("Children")
-    num_children = st.number_input(
-        "Number of children", min_value=0, max_value=20, value=1, key="aoh_num_children_input",
+    st.caption(
+        "Group children by their OTHER parent. Each group becomes a separate "
+        "numbered fact in the affidavit."
     )
-    children_data = []
-    for i in range(num_children):
-        col_c1, col_c2, col_c3, col_c4 = st.columns(4)
-        with col_c1:
-            c_name = st.text_input(f"Child {i+1} Full Name", key=f"aoh_c{i}_name")
-        with col_c2:
-            c_dob = st.text_input(f"Date of Birth", key=f"aoh_c{i}_dob", placeholder="MM/DD/YYYY")
-        with col_c3:
-            c_rel = st.selectbox(f"Type", ["Biological", "Step", "Adopted"], key=f"aoh_c{i}_rel")
-        with col_c4:
-            c_parent = st.text_input(f"Other Parent", key=f"aoh_c{i}_parent")
-        children_data.append({"name": c_name, "dob": c_dob, "relationship": c_rel, "other_parent": c_parent})
-
-    st.divider()
-
-    # -----------------------------------------------------------------------
-    # Section 7: Deceased Children
-    # -----------------------------------------------------------------------
-    st.subheader("Deceased Children (if any)")
-    num_deceased = st.number_input(
-        "Number of deceased children", min_value=0, max_value=20, value=0, key="aoh_num_dec_children",
+    num_child_groups = st.number_input(
+        "Number of child groups (one per other-parent)",
+        min_value=0, max_value=10, value=1, key="aoh_num_child_groups",
     )
-    deceased_children_data = []
-    for i in range(num_deceased):
-        col_dc1, col_dc2 = st.columns(2)
-        with col_dc1:
-            dc_name = st.text_input(f"Deceased Child {i+1} Name", key=f"aoh_dc{i}_name")
-        with col_dc2:
-            dc_death = st.text_input(f"Date of Death", key=f"aoh_dc{i}_death", placeholder="MM/DD/YYYY")
-        deceased_children_data.append({"name": dc_name, "death_date": dc_death})
-
-    st.divider()
-
-    # -----------------------------------------------------------------------
-    # Section 8: Grandchildren of Deceased Children
-    # -----------------------------------------------------------------------
-    st.subheader("Children of Deceased Children (if any)")
-    num_gc = st.number_input(
-        "Number of children of deceased children", min_value=0, max_value=20, value=0, key="aoh_num_gc",
-    )
-    grandchildren_data = []
-    for i in range(num_gc):
+    child_groups_data = []
+    for g in range(num_child_groups):
+        st.markdown(f"**Group {g+1}**")
         col_g1, col_g2, col_g3 = st.columns(3)
         with col_g1:
-            g_name = st.text_input(f"Grandchild {i+1} Name", key=f"aoh_gc{i}_name")
+            op_name = st.text_input(
+                "Other Parent Name", key=f"aoh_cg{g}_op",
+                placeholder="e.g. Norman Hummell",
+            )
         with col_g2:
-            g_dob = st.text_input(f"Date of Birth", key=f"aoh_gc{i}_dob", placeholder="MM/DD/YYYY")
+            op_aka = st.text_input(
+                "Other Parent AKA", key=f"aoh_cg{g}_op_aka",
+                placeholder="blank if none",
+            )
         with col_g3:
-            g_parents = st.text_input(f"Parents", key=f"aoh_gc{i}_parents")
-        grandchildren_data.append({"name": g_name, "dob": g_dob, "parents": g_parents})
+            rel_type = st.selectbox(
+                "Relationship",
+                ["marriage to", "relationship with",
+                 "relationship with and marriage to"],
+                key=f"aoh_cg{g}_rel_type",
+                help="Use 'relationship with and marriage to' when kids "
+                     "were born both before and after the marriage.",
+            )
+        num_kids = st.number_input(
+            "Number of children in this group", min_value=0, max_value=15,
+            value=1, key=f"aoh_cg{g}_num",
+        )
+        kids = []
+        for i in range(num_kids):
+            col_k1, col_k2 = st.columns(2)
+            with col_k1:
+                k_name = st.text_input(f"Child {i+1} Name", key=f"aoh_cg{g}_k{i}_name")
+            with col_k2:
+                k_dob = st.text_input(
+                    f"DOB", key=f"aoh_cg{g}_k{i}_dob",
+                    placeholder="e.g. August 31, 1965",
+                )
+            kids.append({"name": k_name, "dob": k_dob})
+        rel_type_map = {
+            "marriage to": "marriage",
+            "relationship with": "relationship",
+            "relationship with and marriage to": "relationship_and_marriage",
+        }
+        child_groups_data.append({
+            "other_parent": op_name,
+            "other_parent_aka": op_aka,
+            "relationship_type": rel_type_map.get(rel_type, "marriage"),
+            "children": kids,
+        })
 
     st.divider()
 
     # -----------------------------------------------------------------------
-    # Section 9: Additional Info
+    # Section 7: Step-children
     # -----------------------------------------------------------------------
-    st.subheader("Additional Information")
-    had_will = st.text_input(
-        "Did decedent have a Last Will and Testament? Was it probated?",
-        key="aoh_will",
-        placeholder="e.g. No",
+    st.subheader("Step-Children (children Decedent took in and raised)")
+    num_step_groups = st.number_input(
+        "Number of step-child groups (one per spouse who had prior kids)",
+        min_value=0, max_value=5, value=0, key="aoh_num_step_groups",
     )
-    unpaid_debts = st.text_input(
-        "Any debts when decedent died? Any unpaid debts remaining?",
-        key="aoh_debts",
-        placeholder="e.g. No",
+    step_groups_data = []
+    for g in range(num_step_groups):
+        st.markdown(f"**Step-Group {g+1}**")
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            sp_name = st.text_input(
+                "Spouse (parent of step-kids)", key=f"aoh_sg{g}_sp",
+                placeholder="e.g. Howard Loving",
+            )
+        with col_s2:
+            prior_type = st.selectbox(
+                "Prior Relationship",
+                ["marriage to", "relationship with"],
+                key=f"aoh_sg{g}_prior_type",
+            )
+        with col_s3:
+            prior_parent = st.text_input(
+                "Prior Other Parent (the step-kids' mother/father)",
+                key=f"aoh_sg{g}_prior_parent",
+            )
+        num_skids = st.number_input(
+            "Number of step-children", min_value=1, max_value=15,
+            value=1, key=f"aoh_sg{g}_num",
+        )
+        skids = []
+        for i in range(num_skids):
+            col_sk1, col_sk2 = st.columns(2)
+            with col_sk1:
+                sk_name = st.text_input(
+                    f"Step-Child {i+1} Name", key=f"aoh_sg{g}_k{i}_name",
+                )
+            with col_sk2:
+                sk_dob = st.text_input(
+                    "DOB", key=f"aoh_sg{g}_k{i}_dob",
+                    placeholder="MM/DD/YYYY",
+                )
+            skids.append({"name": sk_name, "dob": sk_dob})
+        step_groups_data.append({
+            "spouse_name": sp_name,
+            "prior_relationship_type": (
+                "marriage" if prior_type == "marriage to" else "relationship"
+            ),
+            "prior_other_parent": prior_parent,
+            "children": skids,
+        })
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 8: Subsequent deaths of children
+    # -----------------------------------------------------------------------
+    st.subheader("Subsequent Deaths (children who died AFTER decedent)")
+    st.caption(
+        "Adds: 'Subsequent to the death of Decedent, NAME died on DATE. "
+        "An Affidavit of Heirship for NAME is filed in the Official Public "
+        "Records of COUNTY, Texas, in conjunction herewith.'"
     )
-    unpaid_taxes = st.selectbox("Unpaid estate or inheritance taxes?", ["No", "Yes"], key="aoh_taxes")
+    num_subq = st.number_input(
+        "Number of subsequent deaths", min_value=0, max_value=10, value=0,
+        key="aoh_num_subq",
+    )
+    subsequent_data = []
+    for i in range(num_subq):
+        col_q1, col_q2, col_q3, col_q4 = st.columns(4)
+        with col_q1:
+            sq_name = st.text_input(f"Name", key=f"aoh_sq{i}_name")
+        with col_q2:
+            sq_rel = st.text_input(
+                f"Relationship", key=f"aoh_sq{i}_rel",
+                placeholder="daughter / son (optional)",
+                help="If provided, prefix becomes \"Decedent's daughter NAME\"",
+            )
+        with col_q3:
+            sq_date = st.text_input(
+                f"Date of Death", key=f"aoh_sq{i}_date",
+                placeholder="e.g. October 19, 2023",
+            )
+        with col_q4:
+            sq_county = st.text_input(
+                f"AOH Filed in County", key=f"aoh_sq{i}_county",
+                value="Travis",
+            )
+        subsequent_data.append({
+            "name": sq_name, "relationship": sq_rel,
+            "death_date": sq_date, "aoh_county": sq_county,
+        })
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 8.5: Family Facts (free-form numbered facts for survived-by /
+    # parents / siblings — used when decedent has no children, or other
+    # extended-family statements need to appear in the affidavit)
+    # -----------------------------------------------------------------------
+    st.subheader("Additional Family Facts (optional)")
+    st.caption(
+        "Each non-empty line becomes its own numbered fact in the affidavit. "
+        "Use for things like 'Decedent was survived by her mother...' or "
+        "'Decedent's father, X, died in 2010.' This is most often used when "
+        "the decedent had no children."
+    )
+    family_facts_text = st.text_area(
+        "Family facts (one per line)",
+        key="aoh_family_facts",
+        height=100,
+        placeholder=(
+            "Decedent's father, Larry Wray Stucker, died in 2010. Decedent's "
+            "mother, Patricia Jenks a/k/a Patricia L. Jenks, died on February "
+            "27, 2022. Decedent was survived by his siblings, Cynthia Jones, "
+            "Gary Stucker, and Judith Dutelle."
+        ),
+    )
+    family_facts_data = [
+        line.strip() for line in (family_facts_text or "").splitlines()
+        if line.strip()
+    ]
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 9: Property
+    # -----------------------------------------------------------------------
+    st.subheader("Property (Optional)")
+    use_exhibit_a = st.checkbox(
+        "Use 'Exhibit A' reference instead of inline description",
+        value=False, key="aoh_use_exhibit_a",
+    )
+    col_p1, col_p2 = st.columns([1, 3])
+    with col_p1:
+        property_county = st.text_input(
+            "Property County", key="aoh_prop_county", value="Travis",
+        )
+    with col_p2:
+        property_description = st.text_area(
+            "Property Legal Description (leave blank to skip)",
+            key="aoh_prop_desc", height=80,
+            placeholder="e.g. Lot 2, Block L, QUAIL CREEK WEST, SECTION FOUR, "
+                        "a subdivision in Travis County, Texas, according to "
+                        "the map or plat thereof, recorded in Volume 54, "
+                        "Page 14, Plat Records, Travis County, Texas.",
+        )
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 10: Estate value + boilerplate facts
+    # -----------------------------------------------------------------------
+    st.subheader("Estate Information")
+    col_e1, col_e2, col_e3 = st.columns(3)
+    with col_e1:
+        estate_value = st.text_input(
+            "Estate Value (less than)", key="aoh_estate_value",
+            value="$13,990,000.00",
+            help="Federal estate tax exemption — current is around $13.99M",
+        )
+    with col_e2:
+        died_intestate = st.checkbox(
+            "Decedent died intestate (no will)",
+            value=True, key="aoh_died_intestate",
+        )
+    with col_e3:
+        no_unpaid_debts = st.checkbox(
+            "No unpaid debts / inheritance taxes",
+            value=True, key="aoh_no_unpaid_debts",
+        )
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Section 11: Signing details (optional - blank for hand-fill if omitted)
+    # -----------------------------------------------------------------------
+    st.subheader("Signing Date (optional — leave blank for hand-fill)")
+    col_s1, col_s2, col_s3 = st.columns(3)
+    with col_s1:
+        signing_day = st.text_input(
+            "Day", key="aoh_signing_day", placeholder="e.g. 17",
+            help="Will be formatted as ordinal (17th)",
+        )
+    with col_s2:
+        signing_month = st.text_input(
+            "Month", key="aoh_signing_month", placeholder="e.g. April",
+        )
+    with col_s3:
+        signing_year = st.text_input(
+            "Year", key="aoh_signing_year", placeholder="e.g. 2026",
+        )
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Questionnaire-only fields (still useful for the questionnaire PDF)
+    # -----------------------------------------------------------------------
+    with st.expander("Questionnaire-only fields (Will / Debts / Taxes)"):
+        had_will = st.text_input(
+            "Did decedent have a Will? Was it probated?",
+            key="aoh_will", placeholder="e.g. No",
+        )
+        unpaid_debts_text = st.text_input(
+            "Any debts when decedent died?",
+            key="aoh_debts", placeholder="e.g. No",
+        )
+        unpaid_taxes = st.selectbox(
+            "Unpaid estate or inheritance taxes?",
+            ["No", "Yes"], key="aoh_taxes",
+        )
 
     st.divider()
 
@@ -793,57 +1771,119 @@ with tab_aoh:
         if missing:
             st.error(f"Missing required fields: {', '.join(missing)}")
             return None
+
+        # Build legacy "children" / "deceased_children" lists for the
+        # questionnaire generator (which still uses the flat structure).
+        flat_children = []
+        for grp in child_groups_data:
+            for k in grp.get("children", []):
+                flat_children.append({
+                    "name": k.get("name", ""),
+                    "dob": k.get("dob", ""),
+                    "other_parent": grp.get("other_parent", ""),
+                    "relationship": "Biological",
+                })
+        flat_deceased = [
+            {"name": d["name"], "death_date": d["death_date"]}
+            for d in subsequent_data
+        ]
+        # Build legacy marriages/divorces/remarriages for questionnaire.
+        legacy_marriages = []
+        divorce_dates_legacy = []
+        legacy_remarriages = []
+        for i, m in enumerate(marriages_data):
+            entry = {
+                "date": m["date"],
+                "spouse_name": m["spouse_name"],
+                "spouse_aka": m.get("spouse_aka", ""),
+            }
+            if i == 0:
+                legacy_marriages.append(entry)
+            else:
+                legacy_remarriages.append(entry)
+            if m.get("ended_by") == "divorce" and m.get("end_date"):
+                divorce_dates_legacy.append(m["end_date"])
+
         return {
+            # Decedent
             "decedent_full_name": decedent_full_name,
             "decedent_aka": decedent_aka,
             "decedent_dob": decedent_dob,
+            "decedent_pronoun": decedent_pronoun,
             "death_date": death_date,
             "death_city": death_city,
             "death_county": death_county,
+            "death_state": death_state,
             "residence_address": res_address,
             "residence_city": res_city,
             "residence_state": res_state,
             "residence_zip": res_zip,
             "residence_county": res_county,
+            # Affiant
             "affiant_name": aff_name,
             "affiant_aka": aff_aka,
-            "affiant_relationship": aff_relationship,
-            "affiant_years_known": aff_years,
             "affiant_address": aff_address,
             "affiant_city": aff_city,
             "affiant_county": aff_county,
             "affiant_state": aff_state,
             "affiant_zip": aff_zip,
-            "w1_name": w1_name,
-            "w1_address": w1_address,
-            "w1_city": w1_city,
-            "w1_county": w1_county,
-            "w1_state": w1_state,
-            "w1_zip": w1_zip,
-            "w1_relationship": w1_relationship,
-            "w1_years_known": w1_years,
-            "w2_name": w2_name,
-            "w2_address": w2_address,
-            "w2_city": w2_city,
-            "w2_county": w2_county,
-            "w2_state": w2_state,
-            "w2_zip": w2_zip,
-            "w2_relationship": w2_relationship,
-            "w2_years_known": w2_years,
-            "marriages": marriages_data,
-            "divorced": divorced == "Yes",
-            "divorce_dates": divorce_dates,
-            "remarriages": remarriages_data,
-            "children": children_data,
-            "deceased_children": deceased_children_data,
-            "grandchildren": grandchildren_data,
-            "had_will": had_will,
-            "unpaid_debts": unpaid_debts,
-            "unpaid_taxes": unpaid_taxes == "Yes",
-            "property_description": "",
+            "affiant_verb": aff_verb,
+            "affiant_article": aff_article,
+            "affiant_relationship": aff_relationship,
+            "affiant_duration": aff_duration,
+            # Witnesses (full + flat for back-compat)
+            "w1_name": w1_data["name"],
+            "w1_address": w1_data["address"],
+            "w1_city": w1_data["city"],
+            "w1_county": w1_data["county"],
+            "w1_state": w1_data["state"],
+            "w1_zip": w1_data["zip"],
+            "w1_verb": w1_data["verb"],
+            "w1_article": w1_data["article"],
+            "w1_relationship": w1_data["relationship"],
+            "w1_duration": w1_data["duration"],
+            "w2_name": w2_data["name"],
+            "w2_address": w2_data["address"],
+            "w2_city": w2_data["city"],
+            "w2_county": w2_data["county"],
+            "w2_state": w2_data["state"],
+            "w2_zip": w2_data["zip"],
+            "w2_verb": w2_data["verb"],
+            "w2_article": w2_data["article"],
+            "w2_relationship": w2_data["relationship"],
+            "w2_duration": w2_data["duration"],
+            # Marital history (new + legacy)
+            "never_married": never_married,
+            "marriages": marriages_data if not never_married else [],
+            "divorced": any(
+                m.get("ended_by") == "divorce" for m in marriages_data
+            ),
+            "divorce_dates": divorce_dates_legacy,
+            "remarriages": legacy_remarriages,
+            # Children — new grouped + legacy flat for questionnaire
+            "child_groups": child_groups_data,
+            "children": flat_children,
+            "step_child_groups": step_groups_data,
+            "subsequent_deaths": subsequent_data,
+            "family_facts": family_facts_data,
+            "deceased_children": flat_deceased,
+            "grandchildren": [],
+            # Other facts
+            "died_intestate": died_intestate,
+            "no_unpaid_debts": no_unpaid_debts,
+            "estate_value": estate_value,
+            "property_description": property_description,
+            "property_county": property_county,
+            "use_exhibit_a": use_exhibit_a,
+            # Signing
             "signing_county": death_county,
-            "signing_day": "____",
-            "signing_month_year": "__________, ______",
+            "signing_day": signing_day,
+            "signing_month": signing_month,
+            "signing_year": signing_year,
+            # Questionnaire-only
+            "had_will": had_will,
+            "unpaid_debts": unpaid_debts_text,
+            "unpaid_taxes": unpaid_taxes == "Yes",
         }
 
     # -----------------------------------------------------------------------
@@ -888,3 +1928,672 @@ with tab_aoh:
                     )
                 except Exception as e:
                     st.error(f"Error generating PDF: {e}")
+
+
+# ===========================================================================
+# RESIMPLI SYNC TAB
+# ===========================================================================
+
+with tab_resimpli:
+    st.header("REsimpli Lead Sync")
+    st.caption(
+        "REsimpli has no public API for pulling leads, so this is a manual "
+        "upload workflow."
+    )
+
+    # ---------------- How-to instructions ----------------------------------
+    with st.expander("📋 How to get the CSV from REsimpli", expanded=True):
+        st.markdown(
+            """
+            **Step-by-step:**
+
+            1. Log in to **REsimpli** and go to the **Leads** page
+            2. At the top of the leads table, click the **"Select All"** checkbox
+            3. Click **"Export"** (or "Export Files") in the toolbar
+            4. Wait for the CSV to download to your computer
+            5. **Drag the downloaded CSV into the upload box below** — or click
+               *Browse files* and pick it
+            6. Once it uploads, you'll see lead stats, the manager performance
+               dashboard, and an option to push to Google Sheets
+
+            > **Tip:** Filter REsimpli to "Under Contract" or "Active" leads
+            > before exporting if you only want to sync that subset.
+            """
+        )
+
+    # ---------------- Upload ------------------------------------------------
+    uploaded = st.file_uploader(
+        "Upload REsimpli CSV export",
+        type=["csv"],
+        key="resimpli_upload",
+        help="Drop the CSV file from REsimpli's export feature",
+    )
+
+    if not uploaded:
+        st.info(
+            "No CSV uploaded yet. Once you upload, you'll see lead stats, "
+            "cross-references with your foreclosure pipeline, and an option "
+            "to push to Google Sheets."
+        )
+    else:
+        from resimpli_importer import (
+            parse_resimpli_csv,
+            cross_reference_with_pipeline,
+            summarize,
+            diff_against_snapshot,
+            save_snapshot,
+            push_to_sheets,
+            CORE_COLUMNS,
+            RESIMPLI_TAB_NAME,
+        )
+
+        try:
+            rows = parse_resimpli_csv(uploaded)
+            rows = cross_reference_with_pipeline(rows, str(_data("leads.csv")))
+            # Persist to disk so the TV Dashboard can read it
+            try:
+                with open(_data("resimpli_latest_leads.csv"), "wb") as fh:
+                    uploaded.seek(0)
+                    fh.write(uploaded.read())
+            except Exception:
+                pass
+        except Exception as e:
+            st.error(f"Failed to parse CSV: {e}")
+            st.stop()
+
+        st.success(f"Parsed {len(rows)} lead(s) from {uploaded.name}")
+
+        # ---------------- Summary stats ------------------------------------
+        stats = summarize(rows)
+
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("Total Leads", stats["total"])
+        col_s2.metric(
+            "Foreclosure Source",
+            stats["foreclosure_leads"],
+            help="REsimpli leads with 'Foreclosure Auction' source — these came "
+                 "from your scraping pipeline",
+        )
+        col_s3.metric(
+            "Matched to Pipeline",
+            stats["foreclosure_matched_to_pipeline"],
+            help="Of the foreclosure-source leads, how many we found in leads.csv "
+                 "by address match",
+        )
+        col_s4.metric(
+            "Statuses",
+            len(stats["by_status"]),
+        )
+
+        # ---------------- Status / source breakdowns -----------------------
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            st.caption("**By Status**")
+            for k, v in stats["by_status"].items():
+                st.write(f"- {v} {k}")
+        with col_b2:
+            st.caption("**By Source**")
+            for k, v in stats["by_source"].items():
+                marker = " 🎯" if "Foreclosure" in k else ""
+                st.write(f"- {v} {k}{marker}")
+        with col_b3:
+            st.caption("**By Acquisition Manager**")
+            for k, v in stats["by_acq_manager"].items():
+                st.write(f"- {v} {k}")
+
+        st.divider()
+
+        # ---------------- Diff vs last upload ------------------------------
+        diff = diff_against_snapshot(rows)
+        with st.expander(
+            f"Changes since last upload — "
+            f"{len(diff['new_leads'])} new / "
+            f"{len(diff['status_changes'])} status changes / "
+            f"{len(diff['missing_leads'])} missing",
+            expanded=bool(
+                diff["status_changes"] or
+                (diff["new_leads"] and diff["new_leads"] != rows)
+            ),
+        ):
+            if diff["new_leads"]:
+                st.write(f"**New leads ({len(diff['new_leads'])}):**")
+                df_new = pd.DataFrame([
+                    {
+                        "Property ID": r.get("Property ID", ""),
+                        "Name": f"{r.get('First Name', '')} {r.get('Last Name', '')}".strip(),
+                        "Address": r.get("Property Street Address", ""),
+                        "Status": r.get("Lead Status", ""),
+                        "Source": r.get("Lead Source", ""),
+                    }
+                    for r in diff["new_leads"]
+                ])
+                st.dataframe(df_new, use_container_width=True, height=200)
+            if diff["status_changes"]:
+                st.write(f"**Status changes ({len(diff['status_changes'])}):**")
+                st.dataframe(
+                    pd.DataFrame(diff["status_changes"]),
+                    use_container_width=True, height=200,
+                )
+            if diff["missing_leads"]:
+                st.write(
+                    f"**Leads in previous import but not in this one "
+                    f"({len(diff['missing_leads'])}):**"
+                )
+                df_miss = pd.DataFrame([
+                    {
+                        "Property ID": r.get("Property ID", ""),
+                        "Name": f"{r.get('First Name', '')} {r.get('Last Name', '')}".strip(),
+                        "Address": r.get("Property Street Address", ""),
+                        "Last Status": r.get("Lead Status", ""),
+                    }
+                    for r in diff["missing_leads"]
+                ])
+                st.dataframe(df_miss, use_container_width=True, height=200)
+            if not diff["new_leads"] and not diff["status_changes"] and not diff["missing_leads"]:
+                st.info("No changes since last upload.")
+
+        st.divider()
+
+        # ---------------- Foreclosure cross-reference table ----------------
+        foreclosure_rows = [
+            r for r in rows
+            if "Foreclosure" in (r.get("Lead Source", "") or "")
+        ]
+        if foreclosure_rows:
+            st.subheader("Foreclosure-Source Leads")
+            st.caption(
+                "REsimpli leads tagged 'Foreclosure Auction' — these came "
+                "from your scraping pipeline. The 'Pipeline Match' column "
+                "shows whether we found this address in leads.csv."
+            )
+            xref_df = pd.DataFrame([
+                {
+                    "Name": f"{r.get('First Name', '')} {r.get('Last Name', '')}".strip(),
+                    "Address": r.get("Property Street Address", ""),
+                    "City": r.get("Property City", ""),
+                    "Status": r.get("Lead Status", ""),
+                    "Offer Price": r.get("Offer Price", ""),
+                    "Under Contract Price": r.get("Under Contract Price", ""),
+                    "Pipeline Match": (
+                        "✅ matched"
+                        if r.get("pipeline_match") else "—"
+                    ),
+                    "Pipeline Filing Date": (
+                        r["pipeline_match"].get("filing_date", "")
+                        if r.get("pipeline_match") else ""
+                    ),
+                }
+                for r in foreclosure_rows
+            ])
+            st.dataframe(xref_df, use_container_width=True, height=240)
+
+            st.divider()
+
+        # ---------------- Acquisition Manager Performance ------------------
+        st.subheader("Acquisition Manager Performance")
+
+        def _parse_dollar(s: str) -> float:
+            if not s:
+                return 0.0
+            try:
+                return float(
+                    str(s).replace("$", "").replace(",", "").strip() or 0
+                )
+            except (ValueError, TypeError):
+                return 0.0
+
+        # Build per-manager aggregates
+        from collections import defaultdict
+        agg = defaultdict(lambda: {
+            "deals": 0, "profit": 0.0, "contract": 0.0, "offer": 0.0,
+            "leads": [],
+        })
+        for r in rows:
+            am = r.get("Acquisition Manager", "").strip() or "(unassigned)"
+            agg[am]["deals"] += 1
+            agg[am]["profit"] += _parse_dollar(r.get("Expected Profit", ""))
+            agg[am]["contract"] += _parse_dollar(r.get("Under Contract Price", ""))
+            agg[am]["offer"] += _parse_dollar(r.get("Offer Price", ""))
+            agg[am]["leads"].append(r)
+
+        # Top-level metrics
+        total_deals = sum(d["deals"] for d in agg.values())
+        total_profit = sum(d["profit"] for d in agg.values())
+        total_contract = sum(d["contract"] for d in agg.values())
+        avg_profit_per_deal = (
+            total_profit / total_deals if total_deals else 0.0
+        )
+
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Total Deals", total_deals)
+        m_col2.metric("Total Expected Profit", f"${total_profit:,.0f}")
+        m_col3.metric("Total Under-Contract", f"${total_contract:,.0f}")
+        m_col4.metric("Avg Profit / Deal", f"${avg_profit_per_deal:,.0f}")
+
+        # Build the per-manager dataframe sorted by profit
+        perf_df = pd.DataFrame([
+            {
+                "Acquisition Manager": am,
+                "Deals": d["deals"],
+                "Expected Profit": d["profit"],
+                "Avg Profit / Deal": d["profit"] / d["deals"] if d["deals"] else 0,
+                "Total Under-Contract": d["contract"],
+                "Total Offered": d["offer"],
+            }
+            for am, d in agg.items()
+        ]).sort_values("Expected Profit", ascending=False).reset_index(drop=True)
+
+        # Color palette per manager (consistent across charts)
+        palette = ["#FF4B4B", "#4CC9F0", "#F8961E", "#90BE6D",
+                   "#9B5DE5", "#577590", "#F94144", "#43AA8B"]
+        color_map = {
+            am: palette[i % len(palette)]
+            for i, am in enumerate(perf_df["Acquisition Manager"])
+        }
+
+        # Two side-by-side charts: Profit + Deal Count
+        try:
+            import plotly.express as px
+
+            chart_col1, chart_col2 = st.columns(2)
+            with chart_col1:
+                fig = px.bar(
+                    perf_df,
+                    x="Expected Profit", y="Acquisition Manager",
+                    orientation="h",
+                    text=perf_df["Expected Profit"].apply(
+                        lambda x: f"${x:,.0f}"
+                    ),
+                    color="Acquisition Manager",
+                    color_discrete_map=color_map,
+                    title="Expected Profit by Acquisition Manager",
+                )
+                fig.update_layout(
+                    showlegend=False, height=320,
+                    yaxis={"categoryorder": "total ascending"},
+                    margin=dict(l=10, r=10, t=50, b=10),
+                )
+                fig.update_traces(textposition="outside")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with chart_col2:
+                fig2 = px.bar(
+                    perf_df,
+                    x="Deals", y="Acquisition Manager",
+                    orientation="h",
+                    text="Deals",
+                    color="Acquisition Manager",
+                    color_discrete_map=color_map,
+                    title="Deal Count by Acquisition Manager",
+                )
+                fig2.update_layout(
+                    showlegend=False, height=320,
+                    yaxis={"categoryorder": "total ascending"},
+                    margin=dict(l=10, r=10, t=50, b=10),
+                )
+                fig2.update_traces(textposition="outside")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            # Per-deal profit scatter
+            scatter_df = pd.DataFrame([
+                {
+                    "Acquisition Manager": (
+                        r.get("Acquisition Manager", "").strip() or "(unassigned)"
+                    ),
+                    "Property": r.get("Property Street Address", ""),
+                    "Lead": (
+                        f"{r.get('First Name','')} {r.get('Last Name','')}".strip()
+                    ),
+                    "Expected Profit": _parse_dollar(r.get("Expected Profit", "")),
+                    "Under Contract Price": _parse_dollar(
+                        r.get("Under Contract Price", "")
+                    ),
+                }
+                for r in rows
+            ])
+            fig3 = px.scatter(
+                scatter_df,
+                x="Under Contract Price", y="Expected Profit",
+                color="Acquisition Manager",
+                color_discrete_map=color_map,
+                hover_data=["Property", "Lead"],
+                size="Expected Profit",
+                size_max=40,
+                title="Expected Profit vs. Contract Price (per deal)",
+            )
+            fig3.update_layout(
+                height=400, margin=dict(l=10, r=10, t=50, b=10),
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+
+        except ImportError:
+            # Fallback to native streamlit chart if plotly missing
+            st.bar_chart(
+                perf_df.set_index("Acquisition Manager")[["Expected Profit"]]
+            )
+
+        # Leaderboard table
+        st.caption("**Leaderboard**")
+        display_df = perf_df.copy()
+        display_df["Expected Profit"] = display_df["Expected Profit"].apply(
+            lambda x: f"${x:,.0f}"
+        )
+        display_df["Avg Profit / Deal"] = display_df["Avg Profit / Deal"].apply(
+            lambda x: f"${x:,.0f}"
+        )
+        display_df["Total Under-Contract"] = display_df["Total Under-Contract"].apply(
+            lambda x: f"${x:,.0f}"
+        )
+        display_df["Total Offered"] = display_df["Total Offered"].apply(
+            lambda x: f"${x:,.0f}"
+        )
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        # Per-manager drill-down
+        with st.expander("Drill into a specific Acquisition Manager"):
+            am_choice = st.selectbox(
+                "Pick a manager",
+                ["(all)"] + list(perf_df["Acquisition Manager"]),
+                key="resimpli_am_drill",
+            )
+            if am_choice and am_choice != "(all)":
+                drill_rows = agg[am_choice]["leads"]
+                drill_df = pd.DataFrame([
+                    {
+                        "Property": r.get("Property Street Address", ""),
+                        "City": r.get("Property City", ""),
+                        "Lead": f"{r.get('First Name','')} {r.get('Last Name','')}".strip(),
+                        "Status": r.get("Lead Status", ""),
+                        "Source": r.get("Lead Source", ""),
+                        "Offer": r.get("Offer Price", ""),
+                        "Contract": r.get("Under Contract Price", ""),
+                        "Expected Profit": r.get("Expected Profit", ""),
+                        "Closing Date": r.get("Schedule Closing Date", ""),
+                    }
+                    for r in drill_rows
+                ])
+                st.dataframe(drill_df, use_container_width=True, hide_index=True)
+                st.caption(
+                    f"**{am_choice}** has **{len(drill_rows)}** active deal(s) "
+                    f"totaling **${agg[am_choice]['profit']:,.0f}** in expected profit."
+                )
+
+        st.divider()
+
+        # ---------------- Full lead table ----------------------------------
+        st.subheader("All Leads (filtered to populated columns)")
+        # Drop columns that are 100% empty for cleaner display
+        populated_cols = [
+            c for c in CORE_COLUMNS
+            if any(r.get(c, "").strip() for r in rows if isinstance(r.get(c, ""), str))
+        ]
+        df_all = pd.DataFrame([
+            {c: r.get(c, "") for c in populated_cols} for r in rows
+        ])
+        st.dataframe(df_all, use_container_width=True, height=400)
+
+        st.download_button(
+            "Download cleaned CSV",
+            data=df_all.to_csv(index=False).encode("utf-8"),
+            file_name=uploaded.name.replace(".csv", "_cleaned.csv"),
+            mime="text/csv",
+        )
+
+        st.divider()
+
+        # ---------------- Push to Google Sheets ----------------------------
+        st.subheader("Push to Google Sheets")
+        default_sheet_id = (
+            os.getenv("RESIMPLI_SHEET_ID") or
+            os.getenv("FORECLOSURE_SHEET_ID") or ""
+        )
+        col_p1, col_p2 = st.columns([2, 1])
+        with col_p1:
+            sheet_id = st.text_input(
+                "Google Sheet ID",
+                value=default_sheet_id,
+                key="resimpli_sheet_id",
+                help="The long ID from the sheet URL "
+                     "(.../spreadsheets/d/THIS_PART/edit). "
+                     "Will create/replace a tab named 'REsimpli Leads'.",
+            )
+        with col_p2:
+            tab_name = st.text_input(
+                "Tab Name", value=RESIMPLI_TAB_NAME, key="resimpli_tab_name",
+            )
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("Push to Google Sheets", type="primary", key="resimpli_push"):
+                if not sheet_id:
+                    st.error("Please provide a Google Sheet ID")
+                else:
+                    with st.spinner("Pushing to Sheets..."):
+                        try:
+                            count, url = push_to_sheets(
+                                rows, sheet_id=sheet_id, tab_name=tab_name,
+                            )
+                            save_snapshot(rows)
+                            st.success(f"Pushed {count} lead(s) to Google Sheets")
+                            st.markdown(f"[Open Sheet]({url})")
+                        except Exception as e:
+                            st.error(f"Push failed: {e}")
+        with col_btn2:
+            if st.button("Save Snapshot Only (skip push)", key="resimpli_snapshot_only"):
+                save_snapshot(rows)
+                st.success(
+                    "Snapshot saved. Next upload will diff against this one."
+                )
+
+    # =====================================================================
+    # INVENTORY (current portfolio) — separate uploader, separate metrics
+    # =====================================================================
+    st.divider()
+    st.header("📦 Current Inventory")
+    st.caption(
+        "Houses the team currently owns or has under contract. "
+        "Headline metric: total expected profit across the active portfolio."
+    )
+
+    with st.expander("📋 How to get the Inventory CSV", expanded=False):
+        st.markdown(
+            """
+            1. In REsimpli, go to the **Inventory** tab (separate from Leads)
+            2. Click **"Select All"** at the top of the inventory table
+            3. Click **"Export"** in the toolbar
+            4. Drop the downloaded CSV in the box below
+            """
+        )
+
+    inventory_uploaded = st.file_uploader(
+        "Upload REsimpli Inventory CSV",
+        type=["csv"],
+        key="inventory_upload",
+    )
+
+    if inventory_uploaded:
+        from inventory_importer import (
+            parse_inventory_csv,
+            summarize as inv_summarize,
+            parse_dollar,
+            CORE_COLUMNS as INV_CORE_COLUMNS,
+        )
+
+        try:
+            inv_rows = parse_inventory_csv(inventory_uploaded)
+            # Persist to disk for TV Dashboard
+            try:
+                with open(_data("resimpli_latest_inventory.csv"), "wb") as fh:
+                    inventory_uploaded.seek(0)
+                    fh.write(inventory_uploaded.read())
+            except Exception:
+                pass
+        except Exception as e:
+            st.error(f"Failed to parse inventory CSV: {e}")
+            st.stop()
+
+        inv_stats = inv_summarize(inv_rows)
+
+        # ---------------- HERO METRIC ------------------------------------
+        # Big banner-style display for total expected profit
+        st.markdown(
+            f"""
+            <div style='
+                background: linear-gradient(135deg, #1e3a5f 0%, #2d5f8f 100%);
+                padding: 28px 32px;
+                border-radius: 14px;
+                border-left: 6px solid #4CC9F0;
+                margin: 12px 0 18px 0;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            '>
+                <div style='font-size: 13px; color: #b8d4ea; letter-spacing: 1px;
+                            text-transform: uppercase; margin-bottom: 6px;'>
+                    Total Expected Profit — Current Portfolio
+                </div>
+                <div style='font-size: 52px; font-weight: 800; color: #ffffff;
+                            line-height: 1.1;'>
+                    ${inv_stats['total_expected_profit']:,.0f}
+                </div>
+                <div style='font-size: 14px; color: #b8d4ea; margin-top: 8px;'>
+                    {inv_stats['total_props']} properties •
+                    {inv_stats['props_with_profit']} with profit estimates •
+                    {inv_stats['props_no_profit_yet']} pending
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ---------------- Status breakdown metrics -----------------------
+        status_cols = st.columns(min(len(inv_stats["by_status"]), 4) or 1)
+        for i, (status, data) in enumerate(inv_stats["by_status"].items()):
+            with status_cols[i % len(status_cols)]:
+                st.metric(
+                    f"{status} ({data['count']})",
+                    f"${data['profit']:,.0f}",
+                    help=f"{data['count']} properties expected to net "
+                         f"${data['profit']:,.0f}",
+                )
+
+        st.divider()
+
+        # ---------------- Charts: by status + by project type ------------
+        try:
+            import plotly.express as px
+
+            chart_col1, chart_col2 = st.columns(2)
+
+            with chart_col1:
+                status_df = pd.DataFrame([
+                    {"Status": s, "Profit": d["profit"], "Count": d["count"]}
+                    for s, d in inv_stats["by_status"].items()
+                ])
+                fig = px.pie(
+                    status_df,
+                    values="Profit",
+                    names="Status",
+                    title="Expected Profit by Status",
+                    hole=0.55,
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                )
+                fig.update_traces(
+                    textposition="outside",
+                    textinfo="label+percent",
+                    hovertemplate=(
+                        "<b>%{label}</b><br>"
+                        "Profit: $%{value:,.0f}<br>"
+                        "Share: %{percent}<extra></extra>"
+                    ),
+                )
+                fig.update_layout(
+                    height=360, margin=dict(l=10, r=10, t=50, b=10),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            with chart_col2:
+                type_df = pd.DataFrame([
+                    {"Project Type": t, "Profit": d["profit"], "Count": d["count"]}
+                    for t, d in inv_stats["by_project_type"].items()
+                ])
+                fig2 = px.bar(
+                    type_df.sort_values("Profit"),
+                    x="Profit", y="Project Type",
+                    orientation="h",
+                    text=type_df.sort_values("Profit")["Profit"].apply(
+                        lambda x: f"${x:,.0f}"
+                    ),
+                    color="Project Type",
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    title="Expected Profit by Project Type",
+                )
+                fig2.update_layout(
+                    height=360, margin=dict(l=10, r=10, t=50, b=10),
+                    showlegend=False,
+                )
+                fig2.update_traces(textposition="outside")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            # Per-property profit waterfall
+            sorted_inv = sorted(
+                inv_rows,
+                key=lambda r: -parse_dollar(r.get("Expected Profit", "")),
+            )
+            prop_df = pd.DataFrame([
+                {
+                    "Property": (
+                        r.get("Property Street Address", "")[:30]
+                        + (", " + r.get("Property City", "")
+                           if r.get("Property City") else "")
+                    ),
+                    "Status": r.get("Property Status", ""),
+                    "Project Type": r.get("Project Type", ""),
+                    "Profit": parse_dollar(r.get("Expected Profit", "")),
+                }
+                for r in sorted_inv
+            ])
+            fig3 = px.bar(
+                prop_df,
+                x="Profit", y="Property",
+                orientation="h",
+                color="Status",
+                color_discrete_sequence=px.colors.qualitative.Set2,
+                hover_data=["Project Type"],
+                title="Per-Property Expected Profit",
+                text=prop_df["Profit"].apply(lambda x: f"${x:,.0f}"),
+            )
+            fig3.update_layout(
+                height=max(400, 22 * len(prop_df)),
+                yaxis={"categoryorder": "total ascending"},
+                margin=dict(l=10, r=10, t=50, b=10),
+            )
+            fig3.update_traces(textposition="outside")
+            st.plotly_chart(fig3, use_container_width=True)
+
+        except ImportError:
+            pass
+
+        # ---------------- Inventory table --------------------------------
+        st.subheader("Property Detail")
+        inv_populated = [
+            c for c in INV_CORE_COLUMNS
+            if any(r.get(c, "").strip() for r in inv_rows
+                   if isinstance(r.get(c, ""), str))
+        ]
+        inv_df = pd.DataFrame([
+            {c: r.get(c, "") for c in inv_populated} for r in inv_rows
+        ])
+        # Sort by Expected Profit descending
+        if "Expected Profit" in inv_df.columns:
+            inv_df["_sort"] = inv_df["Expected Profit"].apply(parse_dollar)
+            inv_df = inv_df.sort_values("_sort", ascending=False).drop(
+                columns=["_sort"]
+            )
+        st.dataframe(inv_df, use_container_width=True, height=400)
+
+        st.download_button(
+            "Download cleaned inventory CSV",
+            data=inv_df.to_csv(index=False).encode("utf-8"),
+            file_name=inventory_uploaded.name.replace(".csv", "_cleaned.csv"),
+            mime="text/csv",
+        )

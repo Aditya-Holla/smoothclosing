@@ -338,6 +338,12 @@ def records_to_sheet_rows(records: list[dict]) -> list[list]:
         # names (DOUGLAS WILSON), relative names (NELL HOLLAND), and
         # case variants (Hcv Partners Llc) all get normalized here.
         owner_name = title_case_name(_clean_val(record.get("owner_name", "")))
+        # Travis County tax auctions don't ship owner names in the source
+        # CSV, so owner_name is blank for those rows. Skip Genie's address
+        # search captures the current resident — use that as the owner so
+        # the row isn't pushed with a bare phone number and no name.
+        if not owner_name:
+            owner_name = title_case_name(_clean_val(record.get("current_resident", "")))
         lender = _clean_val(record.get("lender", ""))
 
         # Owner row (all columns filled)
