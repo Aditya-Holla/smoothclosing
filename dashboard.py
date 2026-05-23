@@ -68,41 +68,91 @@ def _data(name: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def run_script(cmd: list[str], status_container, timeout: int = 600) -> subprocess.CompletedProcess:
-    """Run a pipeline script and stream output.
+    """Run a pipeline script and stream output to the UI in real-time.
 
-    timeout defaults to 10 min. Long-running steps (SMS with 5-min relative
-    waits, big skip-trace batches, OCR-heavy PDF batches) must pass a larger
-    value explicitly. TimeoutExpired is caught and reported to the user so
-    the dashboard doesn't crash with a stack trace.
+    Uses Popen + a line-by-line read loop so the user sees progress (e.g.
+    "Processing: April 5.pdf") IMMEDIATELY rather than waiting until the
+    subprocess exits. This is critical for OCR-heavy steps that can run
+    30+ minutes — without streaming, the dashboard looks frozen.
+
+    timeout defaults to 10 min. Long-running steps (SMS, skip-trace,
+    OCR-heavy PDF batches) should pass a larger value. On timeout the
+    subprocess is killed, the partial output is shown, and a clean error
+    appears in the UI (no stack trace).
     """
+    import time
+
     status_container.info(f"Running: `{' '.join(cmd)}`")
-    # cwd=DATA_DIR so scripts read/write relative paths inside the data volume.
-    # PYTHONPATH=BASE_DIR so they can still `import` sibling modules.
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR)}
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(DATA_DIR),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # merge so we get a single chronological stream
+        text=True,
+        bufsize=1,
+    )
+
+    # Keep a sliding window of the most recent output lines so the UI stays
+    # responsive even when scripts emit thousands of lines (e.g. per-page
+    # OCR logs).
+    MAX_LINES = 60
+    lines: list[str] = []
+    start = time.time()
+    timed_out = False
+
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(DATA_DIR),
-            env=env, timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as e:
+        for line in iter(proc.stdout.readline, ""):
+            lines.append(line.rstrip("\n"))
+            if len(lines) > MAX_LINES:
+                lines = lines[-MAX_LINES:]
+            # Update the UI on every line. Streamlit batches DOM updates so
+            # this is cheap even at multi-line/sec rates.
+            status_container.code("\n".join(lines), language=None)
+
+            if time.time() - start > timeout:
+                proc.kill()
+                timed_out = True
+                break
+        proc.stdout.close()
+        returncode = proc.wait(timeout=10)
+    except Exception as e:
+        # Don't let stream-reader exceptions kill the dashboard
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        returncode = -1
+        lines.append(f"[run_script] internal error: {e}")
+        status_container.code("\n".join(lines[-MAX_LINES:]), language=None)
+
+    full_output = "\n".join(lines)
+
+    if timed_out:
         status_container.error(
-            f"Step timed out after {timeout}s. "
-            f"This usually means a batch of PDFs is too large for OCR within "
-            f"the time budget. Try running just `Process Leads` (which now "
-            f"has a longer timeout) or process fewer PDFs at a time."
+            f"Step timed out after {timeout}s and was killed. "
+            f"Partial output shown above. For OCR-heavy steps, consider "
+            f"running smaller batches by processing one county subfolder "
+            f"at a time."
         )
-        # Return a synthetic failed result so callers don't crash
         return subprocess.CompletedProcess(
-            args=cmd, returncode=124, stdout=e.stdout or "", stderr=e.stderr or ""
+            args=cmd, returncode=124, stdout=full_output, stderr="",
         )
-    if result.stdout:
-        status_container.code(result.stdout[-3000:], language=None)
-    if result.returncode != 0 and result.stderr:
-        # Filter to just ERROR/WARNING lines
-        errors = [l for l in result.stderr.split('\n') if 'ERROR' in l or 'WARNING' in l or 'Error' in l]
+
+    if returncode != 0:
+        # Surface ERROR-level lines clearly so the user can see what broke
+        errors = [
+            l for l in lines
+            if any(tag in l for tag in ("ERROR", "Error", "Traceback", "FAILED"))
+        ]
         if errors:
-            status_container.error('\n'.join(errors[-10:]))
-    return result
+            status_container.error("\n".join(errors[-10:]))
+
+    return subprocess.CompletedProcess(
+        args=cmd, returncode=returncode, stdout=full_output, stderr="",
+    )
 
 
 def count_csv_rows(path: str) -> int:
