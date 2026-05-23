@@ -207,20 +207,14 @@ tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli = st.tabs(
 # ===========================================================================
 
 with tab_tv:
-    # Auto-refresh every 60s so the TV stays current without human interaction.
-    #
-    # CRITICAL: st_autorefresh registers globally — even when the user is on
-    # the Acquisitions tab, every 60s the entire dashboard script reruns,
-    # which kills any in-flight subprocess (skip trace, OCR, etc.).
-    # Suppress the autorefresh while a pipeline is running so long-running
-    # jobs don't get murdered by the TV's refresh tick.
-    pipeline_running = st.session_state.get("pipeline_running", False)
-    if not pipeline_running:
-        try:
-            from streamlit_autorefresh import st_autorefresh
-            st_autorefresh(interval=60_000, key="tv_dashboard_refresh")
-        except ImportError:
-            pass  # Optional dependency
+    # Auto-refresh is DISABLED. It caused the Streamlit script to rerun
+    # every 60 seconds, which orphaned any long-running pipeline subprocess
+    # because st.button() returns False on a rerun (the button-block code
+    # path is skipped on every rerun after the click). The TV dashboard
+    # is glance-only; F5 to refresh the underlying data when needed.
+    if st.button("🔄 Refresh data", key="tv_manual_refresh",
+                 help="Re-read the latest REsimpli CSVs from disk"):
+        st.rerun()
 
     # Read latest snapshots from disk
     leads_path = _data("resimpli_latest_leads.csv")
