@@ -903,7 +903,7 @@ with tab_acq:
         st.caption("Pull new PDFs from county websites")
         if st.button("Download PDFs", type="primary", key="dl"):
             with st.spinner("Downloading..."):
-                out = run_script([PYTHON, "county_downloader.py"], st.empty())
+                out = run_script([PYTHON, _script("county_downloader.py")], st.empty())
                 if out.returncode == 0:
                     st.success("Done")
                 else:
@@ -1018,7 +1018,7 @@ with tab_acq:
                           "Skips rows that already have a Call Status."):
             with st.spinner("Syncing..."):
                 out = run_script(
-                    [PYTHON, "sync_call_status.py"],
+                    [PYTHON, _script("sync_call_status.py")],
                     st.empty(),
                     timeout=120,
                 )
@@ -1035,7 +1035,7 @@ with tab_acq:
         progress = st.empty()
 
         progress.info("Step 1/4 - Downloading PDFs...")
-        run_script([PYTHON, "county_downloader.py"], st.empty())
+        run_script([PYTHON, _script("county_downloader.py")], st.empty())
 
         progress.info("Step 2/4 - Parsing new PDFs (main.py writes leads_new.csv)...")
         run_script([PYTHON, _script("main.py"), "--input", "./input_pdfs", "--output", "leads.csv"], st.empty())
@@ -1121,7 +1121,22 @@ export_to_sheets(records)
                     if np in sent_lookup:
                         row[cs_idx] = f"Texted {sent_lookup[np]}"
 
-            df = pd.DataFrame(rows, columns=HEADER_ROW)
+            # HEADER_ROW intentionally has two "Name" columns (owner vs.
+            # relative) to mirror the Google Sheet layout. Streamlit
+            # refuses duplicate column names, so disambiguate the second
+            # occurrence ("Name" -> "Relative Name") for display only.
+            seen = {}
+            display_headers = []
+            for h in HEADER_ROW[: len(rows[0]) if rows else len(HEADER_ROW)]:
+                if h in seen:
+                    seen[h] += 1
+                    display_headers.append(
+                        "Relative Name" if h == "Name" else f"{h} ({seen[h]})"
+                    )
+                else:
+                    seen[h] = 1
+                    display_headers.append(h)
+            df = pd.DataFrame(rows, columns=display_headers)
             owners_count = len(records)
             st.write(f"**{csv_name}** - {label} - {owners_count} lead(s), {len(rows)} total rows (owner + relatives)")
             st.dataframe(df, use_container_width=True, height=400)
@@ -1200,10 +1215,10 @@ with tab_dispo:
 
         if trace_one or trace_all:
             if trace_all:
-                cmd = [PYTHON, "buyer_tracer.py", "--all-tabs"]
+                cmd = [PYTHON, _script("buyer_tracer.py"), "--all-tabs"]
                 label = "all tabs"
             else:
-                cmd = [PYTHON, "buyer_tracer.py", "--tab", metro]
+                cmd = [PYTHON, _script("buyer_tracer.py"), "--tab", metro]
                 label = metro
             if trace_limit_d > 0:
                 cmd.extend(["--limit", str(trace_limit_d)])
