@@ -55,3 +55,8 @@ venv/
 .vscode/
 *.swp
 resimpli_latest_*.csv
+
+# Pipeline runner state — runtime files
+pipeline.pid
+pipeline.state
+pipeline.log

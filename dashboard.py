@@ -1135,90 +1135,120 @@ with tab_acq:
         "Full pipeline = download -> parse new PDFs -> skip trace NEW leads -> push new leads to sheet. "
         "Texting is intentionally NOT wired in - use the Send Texts button above after reviewing."
     )
-    if st.button("Run Full Pipeline", type="secondary", key="run_all"):
-        # Suppress TV Dashboard's auto-refresh while the pipeline runs —
-        # the periodic rerun would kill our long-running subprocess.
-        st.session_state["pipeline_running"] = True
-        progress = st.empty()
+    # ─── Detached pipeline runner ──────────────────────────────────────
+    # The pipeline takes 30+ minutes to OCR a batch of PDFs. Streamlit
+    # can't host a job that long — any rerun (browser refresh, network
+    # blip, autorefresh tick, tab switch in some cases) makes st.button
+    # return False on the next pass, abandoning the orchestrating code.
+    #
+    # So we spawn pipeline_runner.py as a DETACHED background process
+    # (start_new_session=True). It survives Streamlit reruns and even
+    # the user closing the browser. The dashboard polls three files
+    # written by the runner:
+    #   pipeline.log    — combined stdout/stderr
+    #   pipeline.pid    — written on start, removed on clean exit
+    #   pipeline.state  — single line: "running:STEP" / "done" / "failed:STEP"
+    pid_file = _data("pipeline.pid")
+    log_file = _data("pipeline.log")
+    state_file = _data("pipeline.state")
 
-        # --- Step 1: Download ---
-        progress.info("Step 1/4 — Downloading new PDFs from county sites...")
-        out1 = run_script(
-            [PYTHON, _script("county_downloader.py")], st.empty(),
-            timeout=1200,  # 20 min — some sites are slow
-        )
-        if out1.returncode != 0:
-            progress.error("Step 1 failed — see logs above. Pipeline halted.")
-            st.session_state["pipeline_running"] = False
-            st.stop()
+    def _pipeline_alive() -> bool:
+        if not pid_file.exists():
+            return False
+        try:
+            pid = int(pid_file.read_text().strip())
+        except (ValueError, OSError):
+            return False
+        try:
+            os.kill(pid, 0)  # signal 0 = "is alive?"
+            return True
+        except OSError:
+            return False
 
-        # --- Step 2: Process ---
-        progress.info(
-            "Step 2/4 — Parsing PDFs (OCR is slow; budget ~1 min per PDF)..."
-        )
-        out2 = run_script(
-            [PYTHON, _script("main.py"),
-             "--input", "./input_pdfs", "--output", "leads.csv"],
-            st.empty(),
-            timeout=3600,  # 1 hour — OCR over 20+ PDFs can take 30+ min
-        )
-        if out2.returncode != 0:
-            progress.error("Step 2 failed — see logs above. Pipeline halted.")
-            st.session_state["pipeline_running"] = False
-            st.stop()
+    is_running = _pipeline_alive()
+    current_state = (
+        state_file.read_text().strip() if state_file.exists() else ""
+    )
 
-        if _data("leads_new_equity.csv").exists():
-            new_file = "leads_new_equity.csv"
-        elif _data("leads_new.csv").exists():
-            new_file = "leads_new.csv"
-        else:
-            new_file = None
-
-        if not new_file or count_csv_rows(new_file) == 0:
-            progress.success(
-                "Pipeline finished early — no NEW leads this run. "
-                "(County downloads + parse both completed; nothing to trace or push.)"
+    col_pl1, col_pl2 = st.columns([3, 1])
+    with col_pl1:
+        if st.button(
+            "Run Full Pipeline",
+            type="secondary",
+            key="run_all",
+            disabled=is_running,
+        ):
+            # Truncate log so the new run starts fresh visually
+            log_file.write_text("")
+            # Spawn detached
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(BASE_DIR),
+                "PYTHONUNBUFFERED": "1",
+                "DATA_DIR": str(DATA_DIR),
+            }
+            subprocess.Popen(
+                [PYTHON, "-u", _script("pipeline_runner.py")],
+                cwd=str(BASE_DIR),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,  # detach: survives our process death
             )
-            st.session_state["pipeline_running"] = False
-            st.stop()
-
-        # --- Step 3: Skip trace ---
-        progress.info(
-            f"Step 3/4 — Skip tracing {count_csv_rows(new_file)} new lead(s) "
-            f"from {new_file}. Each lead takes ~30s..."
-        )
-        out3 = run_script(
-            [PYTHON, _script("skipgenie.py"),
-             "--input", new_file, "--output", "leads_new_traced.csv"],
-            st.empty(),
-            timeout=3600,
-        )
-        if out3.returncode != 0:
-            progress.warning(
-                "Step 3 (skip trace) had issues — check logs. "
-                "Continuing to push whatever was traced..."
+            st.success(
+                "✅ Pipeline started in the background. It will keep "
+                "running even if you refresh this page or close the "
+                "browser. Progress shown below."
             )
+            time.sleep(0.5)
+            st.rerun()  # immediately reflect "running" state
+    with col_pl2:
+        if is_running and st.button("Stop Pipeline", type="primary",
+                                     key="stop_pipeline"):
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 15)  # SIGTERM
+                st.warning(f"Sent stop signal to PID {pid}")
+            except (ValueError, OSError) as e:
+                st.error(f"Couldn't stop: {e}")
+            time.sleep(0.5)
+            st.rerun()
 
-        # --- Step 4: Push to sheet ---
-        progress.info("Step 4/4 — Pushing NEW leads to Google Sheets...")
-        out4 = run_script([PYTHON, "-c", """
-import csv
-from sheets_exporter import export_to_sheets
-with open('leads_new_traced.csv') as f:
-    records = list(csv.DictReader(f))
-export_to_sheets(records)
-"""], st.empty(), timeout=300)
+    # Live status indicator
+    if is_running:
+        st.info(
+            f"🟢 **Pipeline running** — state: `{current_state or 'starting...'}`"
+        )
+    elif current_state == "done":
+        st.success("✅ Last pipeline run finished successfully")
+    elif current_state.startswith("done:"):
+        st.success(f"✅ Last pipeline run: {current_state}")
+    elif current_state.startswith("failed:"):
+        st.error(f"❌ Last pipeline run failed at: {current_state}")
+    elif current_state:
+        st.info(f"Last state: `{current_state}`")
 
-        if out4.returncode == 0:
-            progress.success(
-                "✅ Pipeline complete! Review leads_new_traced.csv below, "
-                "then click Send Texts when ready."
-            )
-        else:
-            progress.error("Step 4 (Sheets push) failed — see logs above.")
+    # Show live log (last 80 lines)
+    if log_file.exists():
+        log_text = log_file.read_text()
+        last_lines = "\n".join(log_text.splitlines()[-80:])
+        if last_lines.strip():
+            with st.expander(
+                "📋 Pipeline log (last 80 lines)",
+                expanded=is_running,
+            ):
+                st.code(last_lines, language=None)
 
-        # Re-enable TV Dashboard auto-refresh now that the pipeline finished
-        st.session_state["pipeline_running"] = False
+    # Manual refresh button — required because we no longer auto-refresh
+    if is_running:
+        st.caption(
+            "Click 'Refresh status' to fetch the latest log lines. "
+            "(We don't auto-refresh because Streamlit reruns would kill "
+            "any subprocess in the foreground — but this background one is safe.)"
+        )
+        if st.button("🔄 Refresh status", key="refresh_pipeline_status"):
+            st.rerun()
 
     # --- View Current Leads ---
     st.divider()
