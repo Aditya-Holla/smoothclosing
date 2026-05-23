@@ -1,0 +1,19 @@
+# Streamlit config — tuned for the SmoothClosing dashboard.
+#
+# Long-running pipeline subprocesses (OCR, skip-trace) stream many output
+# lines over 30+ minutes. The default websocket message size + ping
+# interval can cause the connection to drop mid-run, which makes the
+# dashboard appear "frozen halfway through".
+
+[server]
+maxUploadSize = 200
+maxMessageSize = 500
+# Don't disconnect a client just because it's been idle while a subprocess runs.
+enableStaticServing = false
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+# Allow long-running scripts to keep the script-thread alive
+fastReruns = false

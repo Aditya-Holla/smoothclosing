@@ -83,7 +83,20 @@ def run_script(cmd: list[str], status_container, timeout: int = 600) -> subproce
     import time
 
     status_container.info(f"Running: `{' '.join(cmd)}`")
-    env = {**os.environ, "PYTHONPATH": str(BASE_DIR)}
+    # PYTHONUNBUFFERED=1 forces Python subprocess to flush stdout per-line.
+    # Without this, Python switches to block buffering when stdout is a pipe
+    # (not a TTY), so lines sit in the buffer for minutes and the dashboard
+    # appears frozen halfway through a step.
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(BASE_DIR),
+        "PYTHONUNBUFFERED": "1",
+    }
+
+    # Run python with -u (also unbuffered) so any nested subprocess.run that
+    # python kicks off still flushes promptly. Belt + suspenders.
+    if cmd and cmd[0] == PYTHON and (len(cmd) < 2 or cmd[1] != "-u"):
+        cmd = [cmd[0], "-u"] + cmd[1:]
 
     proc = subprocess.Popen(
         cmd,
@@ -101,22 +114,37 @@ def run_script(cmd: list[str], status_container, timeout: int = 600) -> subproce
     MAX_LINES = 60
     lines: list[str] = []
     start = time.time()
+    last_ui_update = 0.0
     timed_out = False
+
+    def _flush_ui():
+        # Slice off the sliding window for display.
+        window = lines[-MAX_LINES:]
+        try:
+            status_container.code("\n".join(window), language=None)
+        except Exception:
+            # Streamlit can throw if the websocket is mid-reconnect — swallow
+            # so the subprocess keeps running.
+            pass
 
     try:
         for line in iter(proc.stdout.readline, ""):
             lines.append(line.rstrip("\n"))
-            if len(lines) > MAX_LINES:
-                lines = lines[-MAX_LINES:]
-            # Update the UI on every line. Streamlit batches DOM updates so
-            # this is cheap even at multi-line/sec rates.
-            status_container.code("\n".join(lines), language=None)
+            now = time.time()
+            # Throttle UI updates to ~2/sec. Updating on every single line
+            # over a 30-min OCR run flooded Streamlit's websocket and the
+            # UI froze halfway through.
+            if now - last_ui_update >= 0.5:
+                _flush_ui()
+                last_ui_update = now
 
-            if time.time() - start > timeout:
+            if now - start > timeout:
                 proc.kill()
                 timed_out = True
                 break
         proc.stdout.close()
+        # Final UI flush to capture the last lines emitted between throttle ticks
+        _flush_ui()
         returncode = proc.wait(timeout=10)
     except Exception as e:
         # Don't let stream-reader exceptions kill the dashboard
@@ -179,12 +207,20 @@ tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli = st.tabs(
 # ===========================================================================
 
 with tab_tv:
-    # Auto-refresh every 60s so the TV stays current without human interaction
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=60_000, key="tv_dashboard_refresh")
-    except ImportError:
-        pass  # Optional dependency
+    # Auto-refresh every 60s so the TV stays current without human interaction.
+    #
+    # CRITICAL: st_autorefresh registers globally — even when the user is on
+    # the Acquisitions tab, every 60s the entire dashboard script reruns,
+    # which kills any in-flight subprocess (skip trace, OCR, etc.).
+    # Suppress the autorefresh while a pipeline is running so long-running
+    # jobs don't get murdered by the TV's refresh tick.
+    pipeline_running = st.session_state.get("pipeline_running", False)
+    if not pipeline_running:
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=60_000, key="tv_dashboard_refresh")
+        except ImportError:
+            pass  # Optional dependency
 
     # Read latest snapshots from disk
     leads_path = _data("resimpli_latest_leads.csv")
@@ -979,15 +1015,19 @@ with tab_acq:
         st.caption("Parse PDFs + estimate equity")
         include_equity = st.checkbox("Include equity (uses RentCast credits)", value=False)
         if st.button("Process Leads", type="primary", key="proc"):
+            st.session_state["pipeline_running"] = True
             log_area = st.empty()
             with st.spinner("Parsing PDFs (OCR can take ~1 min per PDF)..."):
                 # Bump to 1 hour — OCR over 20+ scanned PDFs can take 30+ min,
                 # and TimeoutExpired silently kills the dashboard otherwise.
-                out = run_script(
-                    [PYTHON, _script("main.py"),
-                     "--input", "./input_pdfs", "--output", "leads.csv"],
-                    log_area, timeout=3600,
-                )
+                try:
+                    out = run_script(
+                        [PYTHON, _script("main.py"),
+                         "--input", "./input_pdfs", "--output", "leads.csv"],
+                        log_area, timeout=3600,
+                    )
+                finally:
+                    st.session_state["pipeline_running"] = False
             if out.returncode == 0:
                 count = count_csv_rows("leads.csv")
                 st.success(f"{count} leads extracted")
@@ -1102,6 +1142,9 @@ with tab_acq:
         "Texting is intentionally NOT wired in - use the Send Texts button above after reviewing."
     )
     if st.button("Run Full Pipeline", type="secondary", key="run_all"):
+        # Suppress TV Dashboard's auto-refresh while the pipeline runs —
+        # the periodic rerun would kill our long-running subprocess.
+        st.session_state["pipeline_running"] = True
         progress = st.empty()
 
         # --- Step 1: Download ---
@@ -1112,6 +1155,7 @@ with tab_acq:
         )
         if out1.returncode != 0:
             progress.error("Step 1 failed — see logs above. Pipeline halted.")
+            st.session_state["pipeline_running"] = False
             st.stop()
 
         # --- Step 2: Process ---
@@ -1126,6 +1170,7 @@ with tab_acq:
         )
         if out2.returncode != 0:
             progress.error("Step 2 failed — see logs above. Pipeline halted.")
+            st.session_state["pipeline_running"] = False
             st.stop()
 
         if _data("leads_new_equity.csv").exists():
@@ -1140,6 +1185,7 @@ with tab_acq:
                 "Pipeline finished early — no NEW leads this run. "
                 "(County downloads + parse both completed; nothing to trace or push.)"
             )
+            st.session_state["pipeline_running"] = False
             st.stop()
 
         # --- Step 3: Skip trace ---
@@ -1176,6 +1222,9 @@ export_to_sheets(records)
             )
         else:
             progress.error("Step 4 (Sheets push) failed — see logs above.")
+
+        # Re-enable TV Dashboard auto-refresh now that the pipeline finished
+        st.session_state["pipeline_running"] = False
 
     # --- View Current Leads ---
     st.divider()
