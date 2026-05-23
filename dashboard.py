@@ -71,16 +71,30 @@ def run_script(cmd: list[str], status_container, timeout: int = 600) -> subproce
     """Run a pipeline script and stream output.
 
     timeout defaults to 10 min. Long-running steps (SMS with 5-min relative
-    waits, big skip-trace batches) must pass a larger value explicitly.
+    waits, big skip-trace batches, OCR-heavy PDF batches) must pass a larger
+    value explicitly. TimeoutExpired is caught and reported to the user so
+    the dashboard doesn't crash with a stack trace.
     """
     status_container.info(f"Running: `{' '.join(cmd)}`")
     # cwd=DATA_DIR so scripts read/write relative paths inside the data volume.
     # PYTHONPATH=BASE_DIR so they can still `import` sibling modules.
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR)}
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(DATA_DIR),
-        env=env, timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(DATA_DIR),
+            env=env, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        status_container.error(
+            f"Step timed out after {timeout}s. "
+            f"This usually means a batch of PDFs is too large for OCR within "
+            f"the time budget. Try running just `Process Leads` (which now "
+            f"has a longer timeout) or process fewer PDFs at a time."
+        )
+        # Return a synthetic failed result so callers don't crash
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=124, stdout=e.stdout or "", stderr=e.stderr or ""
+        )
     if result.stdout:
         status_container.code(result.stdout[-3000:], language=None)
     if result.returncode != 0 and result.stderr:
@@ -916,8 +930,14 @@ with tab_acq:
         include_equity = st.checkbox("Include equity (uses RentCast credits)", value=False)
         if st.button("Process Leads", type="primary", key="proc"):
             log_area = st.empty()
-            with st.spinner("Parsing PDFs..."):
-                out = run_script([PYTHON, _script("main.py"), "--input", "./input_pdfs", "--output", "leads.csv"], log_area)
+            with st.spinner("Parsing PDFs (OCR can take ~1 min per PDF)..."):
+                # Bump to 1 hour — OCR over 20+ scanned PDFs can take 30+ min,
+                # and TimeoutExpired silently kills the dashboard otherwise.
+                out = run_script(
+                    [PYTHON, _script("main.py"),
+                     "--input", "./input_pdfs", "--output", "leads.csv"],
+                    log_area, timeout=3600,
+                )
             if out.returncode == 0:
                 count = count_csv_rows("leads.csv")
                 st.success(f"{count} leads extracted")
@@ -1034,11 +1054,29 @@ with tab_acq:
     if st.button("Run Full Pipeline", type="secondary", key="run_all"):
         progress = st.empty()
 
-        progress.info("Step 1/4 - Downloading PDFs...")
-        run_script([PYTHON, _script("county_downloader.py")], st.empty())
+        # --- Step 1: Download ---
+        progress.info("Step 1/4 — Downloading new PDFs from county sites...")
+        out1 = run_script(
+            [PYTHON, _script("county_downloader.py")], st.empty(),
+            timeout=1200,  # 20 min — some sites are slow
+        )
+        if out1.returncode != 0:
+            progress.error("Step 1 failed — see logs above. Pipeline halted.")
+            st.stop()
 
-        progress.info("Step 2/4 - Parsing new PDFs (main.py writes leads_new.csv)...")
-        run_script([PYTHON, _script("main.py"), "--input", "./input_pdfs", "--output", "leads.csv"], st.empty())
+        # --- Step 2: Process ---
+        progress.info(
+            "Step 2/4 — Parsing PDFs (OCR is slow; budget ~1 min per PDF)..."
+        )
+        out2 = run_script(
+            [PYTHON, _script("main.py"),
+             "--input", "./input_pdfs", "--output", "leads.csv"],
+            st.empty(),
+            timeout=3600,  # 1 hour — OCR over 20+ PDFs can take 30+ min
+        )
+        if out2.returncode != 0:
+            progress.error("Step 2 failed — see logs above. Pipeline halted.")
+            st.stop()
 
         if _data("leads_new_equity.csv").exists():
             new_file = "leads_new_equity.csv"
@@ -1049,31 +1087,45 @@ with tab_acq:
 
         if not new_file or count_csv_rows(new_file) == 0:
             progress.success(
-                "Pipeline finished early - no new leads this run. Nothing to trace or push."
+                "Pipeline finished early — no NEW leads this run. "
+                "(County downloads + parse both completed; nothing to trace or push.)"
             )
             st.stop()
 
-        progress.info(f"Step 3/4 - Skip tracing {count_csv_rows(new_file)} new lead(s) from {new_file}...")
-        # Skip Genie uses Playwright with 2FA + manual waits; a batch of 50+
-        # leads can exceed 30 min. Give it a full hour before timing out.
-        run_script(
-            [PYTHON, _script("skipgenie.py"), "--input", new_file, "--output", "leads_new_traced.csv"],
+        # --- Step 3: Skip trace ---
+        progress.info(
+            f"Step 3/4 — Skip tracing {count_csv_rows(new_file)} new lead(s) "
+            f"from {new_file}. Each lead takes ~30s..."
+        )
+        out3 = run_script(
+            [PYTHON, _script("skipgenie.py"),
+             "--input", new_file, "--output", "leads_new_traced.csv"],
             st.empty(),
             timeout=3600,
         )
+        if out3.returncode != 0:
+            progress.warning(
+                "Step 3 (skip trace) had issues — check logs. "
+                "Continuing to push whatever was traced..."
+            )
 
-        progress.info("Step 4/4 - Pushing NEW leads to Google Sheets...")
-        run_script([PYTHON, "-c", """
+        # --- Step 4: Push to sheet ---
+        progress.info("Step 4/4 — Pushing NEW leads to Google Sheets...")
+        out4 = run_script([PYTHON, "-c", """
 import csv
 from sheets_exporter import export_to_sheets
 with open('leads_new_traced.csv') as f:
     records = list(csv.DictReader(f))
 export_to_sheets(records)
-"""], st.empty())
+"""], st.empty(), timeout=300)
 
-        progress.success(
-            "Pipeline complete! Review leads_new_traced.csv below, then click Send Texts when ready."
-        )
+        if out4.returncode == 0:
+            progress.success(
+                "✅ Pipeline complete! Review leads_new_traced.csv below, "
+                "then click Send Texts when ready."
+            )
+        else:
+            progress.error("Step 4 (Sheets push) failed — see logs above.")
 
     # --- View Current Leads ---
     st.divider()
