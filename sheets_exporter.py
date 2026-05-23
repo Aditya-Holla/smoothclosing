@@ -460,6 +460,19 @@ def export_to_sheets(new_records: list[dict], sheet_id: str = None, creds_path: 
     # Batch append
     end_row = start_row + len(rows_to_add) - 1
     cell_range = f"A{start_row}:{LAST_COL_LETTER}{end_row}"
+
+    # Ensure the worksheet has enough rows. Google Sheets enforces a
+    # grid limit per worksheet; appending past that limit raises a 400.
+    sheet_rows = worksheet.row_count
+    if end_row > sheet_rows:
+        # Add a bit of headroom so future small appends don't need a resize.
+        needed = end_row - sheet_rows + 50
+        worksheet.add_rows(needed)
+        logger.info(
+            f"Sheets: extended worksheet by {needed} rows "
+            f"(was {sheet_rows}, now {sheet_rows + needed})."
+        )
+
     worksheet.update(cell_range, rows_to_add)
 
     # Highlight new rows and add Call Status dropdown
