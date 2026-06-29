@@ -12,11 +12,16 @@ multi-marriage / step-children / subsequent-death cases are supported.
 """
 
 import io
+import re
 
+from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    PageTemplate,
     SimpleDocTemplate,
     Paragraph,
     Spacer,
@@ -57,8 +62,12 @@ PLURAL_TEXT = (
 # Styles — affidavit document
 # ---------------------------------------------------------------------------
 
+# Body prose is fully justified with a 0.5" (36pt) first-line indent — the
+# firm's affidavits run justified margin-to-margin and tab the first line of
+# every boilerplate paragraph in by half an inch.
 BODY = ParagraphStyle(
     "body", fontSize=11, leading=14, fontName="Times-Roman", spaceAfter=6,
+    alignment=TA_JUSTIFY, firstLineIndent=36,
 )
 
 BODY_BOLD = ParagraphStyle("body_bold", parent=BODY, fontName="Times-Bold")
@@ -68,12 +77,25 @@ TITLE_STYLE = ParagraphStyle(
     alignment=1, spaceAfter=18,
 )
 
+# Flush-left, no first-line indent — jurat labels and the return-to block.
 HEADER_STYLE = ParagraphStyle(
     "header", fontSize=11, leading=14, fontName="Times-Roman", spaceAfter=2,
 )
 
+# Numbered facts: the number hangs in the gutter at 36pt (0.5") via reportlab's
+# bullet, and EVERY line of prose — first line and wrapped lines alike — aligns
+# at 54pt (0.75"), justified. This matches the firm template, which tabs the
+# prose to 0.75" so the number sits alone in the gutter.
 INDENT_STYLE = ParagraphStyle(
-    "indent", parent=BODY, leftIndent=36, spaceAfter=4,
+    "indent", parent=BODY, leftIndent=54, firstLineIndent=0, spaceAfter=4,
+    bulletIndent=36, bulletFontName="Times-Roman", bulletFontSize=11,
+)
+
+# Plain flush-left cell text for the NAME / BIRTHDATE children table (the table
+# itself supplies the left offset, so the paragraph carries no indent).
+CELL_STYLE = ParagraphStyle(
+    "cell", parent=BODY, leftIndent=0, firstLineIndent=0,
+    alignment=0, spaceAfter=2,
 )
 
 SMALL_STYLE = ParagraphStyle(
@@ -85,7 +107,8 @@ SIG_STYLE = ParagraphStyle(
 )
 
 SIG_MARKER_STYLE = ParagraphStyle(
-    "sig_marker", parent=BODY, alignment=1, fontName="Times-Italic",
+    "sig_marker", parent=BODY, alignment=1, firstLineIndent=0,
+    fontName="Times-Italic",
 )
 
 # ---------------------------------------------------------------------------
@@ -100,12 +123,42 @@ def _u(text: str) -> str:
     return f"<u>{text}</u>"
 
 
+# Leading "12. " on a numbered fact, peeled off so the number can ride in the
+# hanging-indent gutter instead of inline with the prose.
+_FACT_PREFIX = re.compile(r"^(\d+)\.\s+")
+
+
 def _para(text: str, style=None) -> Paragraph:
+    # Numbered facts (the only INDENT_STYLE paragraphs) render the leading
+    # number as a reportlab bullet so it sits in the gutter and the prose —
+    # first line and wrapped lines alike — aligns at the 0.75" left indent.
+    if style is INDENT_STYLE:
+        m = _FACT_PREFIX.match(text)
+        if m:
+            return Paragraph(text[m.end():], INDENT_STYLE,
+                             bulletText=m.group(1) + ".")
     return Paragraph(text, style or BODY)
 
 
 def _spacer(pts: float = 12) -> Spacer:
     return Spacer(1, pts)
+
+
+def _sanitize_strings(obj):
+    """Recursively strip leading/trailing whitespace from every string value.
+
+    Source data (hand-entered or scraped) often carries stray trailing spaces —
+    a zip of "78633 " or an end date of "09/01/1975 " — which would otherwise
+    render as "...78633 ." with a space before the period. Stripping at the
+    boundary keeps the generated prose clean everywhere.
+    """
+    if isinstance(obj, str):
+        return obj.strip()
+    if isinstance(obj, dict):
+        return {k: _sanitize_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_strings(v) for v in obj]
+    return obj
 
 
 def _ordinal(n: int) -> str:
@@ -131,20 +184,73 @@ def _number_word(n: int) -> str:
 
 
 def _children_table(children: list) -> Table:
-    """Build a NAME / BIRTHDATE table for a children list."""
+    """Build a NAME / BIRTHDATE table for a children list.
+
+    Left-aligned under the numbered facts: the NAME column starts at 0.75"
+    (54pt) from the margin — flush with the fact prose — and the BIRTHDATE
+    column at 4.5" (324pt), matching the firm template exactly.
+    """
     rows = [[
-        Paragraph(_u("NAME"), INDENT_STYLE),
-        Paragraph(_u("BIRTHDATE"), INDENT_STYLE),
+        Paragraph(_u("NAME"), CELL_STYLE),
+        Paragraph(_u("BIRTHDATE"), CELL_STYLE),
     ]]
     for c in children:
         rows.append([
-            Paragraph(c.get("name", ""), INDENT_STYLE),
-            Paragraph(c.get("dob", ""), INDENT_STYLE),
+            Paragraph(c.get("name", ""), CELL_STYLE),
+            Paragraph(c.get("dob", ""), CELL_STYLE),
         ])
-    t = Table(rows, colWidths=[3.5 * inch, 2.5 * inch])
+    t = Table(rows, colWidths=[324, 144])  # 324 + 144 = 6.5" usable width
+    t.hAlign = "LEFT"
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 36),
+        ("LEFTPADDING", (0, 0), (0, -1), 54),   # NAME text at 0.75"
+        ("LEFTPADDING", (1, 0), (1, -1), 0),    # BIRTHDATE text at 4.5"
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),  # gap under the header row
+    ]))
+    return t
+
+
+def _state_county_block(state_line: str, county_line: str,
+                        presents_text: str = "") -> Table:
+    """State/County jurat block with the § symbols in a true vertical column.
+
+    reportlab Paragraphs collapse leading/repeated whitespace, so space-padded
+    alignment silently breaks (the middle § snaps to the left margin and the
+    proportional font leaves the top/bottom § ragged). A table keeps the §
+    column straight regardless of label width.
+
+        THE STATE OF TEXAS   §
+                             §   <presents_text>
+        COUNTY OF ...        §
+
+    presents_text sits to the right of the middle § (e.g. the "KNOW ALL MEN BY
+    THESE PRESENTS:" clause); leave it blank for notary acknowledgment blocks.
+    """
+    def P(text: str) -> Paragraph:
+        # Empty cells render a non-breaking space so the row keeps its height.
+        return Paragraph(text or "&nbsp;", HEADER_STYLE)
+
+    # The firm template tabs the § column to a fixed 2.5" from the left margin
+    # on every page (header and notary blocks alike), regardless of label
+    # width. A fixed first column keeps that column dead straight.
+    label_w = 2.5 * inch
+    sec_w = 14
+    rest_w = 6.5 * inch - label_w - sec_w
+
+    rows = [
+        [P(state_line),  P("§"), P("")],
+        [P(""),          P("§"), P(presents_text)],
+        [P(county_line), P("§"), P("")],
+    ]
+    t = Table(rows, colWidths=[label_w, sec_w, rest_w])
+    t.hAlign = "LEFT"
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
     return t
 
@@ -165,10 +271,9 @@ def _signature_block(name_display: str, signer_label: str, month_year: str) -> l
     elements.append(_spacer(24))
 
     # Notary preamble (blank state/county for remote / out-of-state notaries)
-    elements.append(Paragraph("THE STATE OF TEXAS   §", HEADER_STYLE))
-    elements.append(Paragraph("                    §", HEADER_STYLE))
-    elements.append(Paragraph(
-        "COUNTY OF _______________  §", HEADER_STYLE,
+    elements.append(_state_county_block(
+        "THE STATE OF TEXAS",
+        "COUNTY OF _______________",
     ))
     elements.append(_spacer(8))
 
@@ -195,12 +300,23 @@ def generate_aoh_pdf(data: dict) -> bytes:
     See module docstring for the supported data keys. All optional fields fall
     back to sensible defaults so a minimal data dict still produces a valid PDF.
     """
+    data = _sanitize_strings(data)
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
+    # An explicit zero-padding frame puts body text exactly at the 1" margin.
+    # reportlab's default frame adds 6pt of internal padding, which would shift
+    # every line ~6pt right of the firm template and leave justified lines 6pt
+    # short of the right margin.
+    doc = BaseDocTemplate(
         buf, pagesize=letter,
         topMargin=0.8 * inch, bottomMargin=0.8 * inch,
         leftMargin=1 * inch, rightMargin=1 * inch,
     )
+    frame = Frame(
+        doc.leftMargin, doc.bottomMargin, doc.width, doc.height,
+        leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0,
+        id="body",
+    )
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame])])
 
     elements: list = []
 
@@ -226,17 +342,21 @@ def generate_aoh_pdf(data: dict) -> bytes:
     elements.append(_spacer(6))
 
     # ---- State / County header ------------------------------------------
-    signing_county = data.get(
-        "signing_county",
-        data.get("death_county", data.get("residence_county", "")),
+    # The affidavit is recorded in the county where the property sits, so the
+    # header county is the property (then residence) county — NOT the county of
+    # death. A decedent who died in a Travis County hospital but whose home and
+    # land are in Hays County yields "COUNTY OF HAYS" here, matching the firm's
+    # filed affidavits.
+    signing_county = (
+        data.get("signing_county")
+        or data.get("property_county")
+        or data.get("residence_county")
+        or data.get("death_county", "")
     )
-    elements.append(Paragraph("THE STATE OF TEXAS   §", HEADER_STYLE))
-    elements.append(Paragraph(
-        "                  §   KNOW ALL MEN BY THESE PRESENTS:",
-        HEADER_STYLE,
-    ))
-    elements.append(Paragraph(
-        f"COUNTY OF {signing_county.upper()}   §", HEADER_STYLE,
+    elements.append(_state_county_block(
+        "THE STATE OF TEXAS",
+        f"COUNTY OF {signing_county.upper()}",
+        presents_text="KNOW ALL MEN BY THESE PRESENTS:",
     ))
     elements.append(_spacer(12))
 
@@ -432,6 +552,37 @@ def generate_aoh_pdf(data: dict) -> bytes:
                 "children": legacy,
             }]
 
+    # Consolidate groups that share the same other-parent + relationship so all
+    # children of one marriage render as a single fact ("Decedent had eight
+    # children born of Decedent's marriage to X...") instead of repeating
+    # "Decedent had one child..." once per child. Children with no name are
+    # dropped so a stray blank row doesn't inflate the count or the table.
+    merged_groups: list = []
+    group_index_by_key: dict = {}
+    for group in child_groups:
+        kids = [
+            k for k in group.get("children", [])
+            if (k.get("name") or "").strip()
+        ]
+        if not kids:
+            continue
+        key = (
+            (group.get("other_parent") or "").strip().lower(),
+            (group.get("other_parent_aka") or "").strip().lower(),
+            group.get("relationship_type", "marriage"),
+        )
+        if key in group_index_by_key:
+            merged_groups[group_index_by_key[key]]["children"].extend(kids)
+        else:
+            group_index_by_key[key] = len(merged_groups)
+            merged_groups.append({
+                "other_parent": group.get("other_parent", ""),
+                "other_parent_aka": group.get("other_parent_aka", ""),
+                "relationship_type": group.get("relationship_type", "marriage"),
+                "children": list(kids),
+            })
+    child_groups = merged_groups
+
     total_children_count = 0  # used later for "any other / any" wording
 
     for group in child_groups:
@@ -575,9 +726,10 @@ def generate_aoh_pdf(data: dict) -> bytes:
 
     # ---- Estate value -------------------------------------------------
     fact_num += 1
-    estate_value = data.get("estate_value", "$5,000,000.00")
-    estate_value = estate_value.strip()
-    if estate_value and not estate_value.startswith("$"):
+    estate_value = (data.get("estate_value") or "").strip()
+    if not estate_value:
+        estate_value = "$5,000,000.00"
+    if not estate_value.startswith("$"):
         estate_value = "$" + estate_value
     elements.append(_para(
         f"{fact_num}. Decedent left an estate with a probable value of less "
@@ -663,8 +815,9 @@ def generate_aoh_pdf(data: dict) -> bytes:
     elements += _signature_block(w2, w2, month_year)
 
     # ---- After Recording Return To ----------------------------------
+    # Flush left, tight lines, no first-line indent (HEADER_STYLE).
     elements.append(_spacer(40))
-    elements.append(_para("After Recording Return To:"))
+    elements.append(_para("After Recording Return To:", HEADER_STYLE))
     return_to_name = data.get("return_to_name") or affiant_display
     return_to_addr = data.get("return_to_address") or data.get("affiant_address", "")
     return_to_city = data.get("return_to_city") or data.get("affiant_city", "")
@@ -672,10 +825,11 @@ def generate_aoh_pdf(data: dict) -> bytes:
         data.get("return_to_state") or data.get("affiant_state", "Texas")
     )
     return_to_zip = data.get("return_to_zip") or data.get("affiant_zip", "")
-    elements.append(_para(return_to_name))
-    elements.append(_para(return_to_addr))
+    elements.append(_para(return_to_name, HEADER_STYLE))
+    elements.append(_para(return_to_addr, HEADER_STYLE))
     elements.append(_para(
-        f"{return_to_city}, {return_to_state} {return_to_zip}"
+        f"{return_to_city}, {return_to_state} {return_to_zip}",
+        HEADER_STYLE,
     ))
 
     doc.build(elements)

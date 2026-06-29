@@ -2065,8 +2065,10 @@ with tab_aoh:
             "property_description": property_description,
             "property_county": property_county,
             "use_exhibit_a": use_exhibit_a,
-            # Signing
-            "signing_county": death_county,
+            # Signing — the affidavit is recorded where the property sits, so
+            # the header "COUNTY OF ___" follows the property (then residence)
+            # county, not the county of death.
+            "signing_county": property_county or res_county or death_county,
             "signing_day": signing_day,
             "signing_month": signing_month,
             "signing_year": signing_year,
