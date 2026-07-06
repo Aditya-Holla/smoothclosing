@@ -121,8 +121,45 @@ async def login(page, username: str, password: str) -> None:
         return
 
     logger.info(f"Not on search page (URL: {page.url}). Need to log in.")
-    logger.info("Please log in manually in the browser window (enter email, password, solve CAPTCHA).")
 
+    # Attempt automatic login. The Cloudflare Turnstile on this form passes
+    # on its own in real Chrome (no interaction needed) — give it a few
+    # seconds, fill credentials, and click LOGIN. If anything fails we fall
+    # through to the manual-login wait loop below.
+    try:
+        email_sel = (
+            'input[type="email"], input[name*="email" i], '
+            'input[placeholder*="mail" i]'
+        )
+        await page.wait_for_selector(email_sel, timeout=15_000)
+        # Wait for Turnstile to auto-pass (its hidden response token gets set)
+        for _ in range(20):
+            token = await page.evaluate("""
+                () => {
+                    const el = document.querySelector(
+                        'input[name="cf-turnstile-response"]'
+                    );
+                    return el ? el.value : null;
+                }
+            """)
+            if token is None or token:  # no widget at all, or solved
+                break
+            await page.wait_for_timeout(1_000)
+        await _react_fill(page, email_sel, username)
+        await _react_fill(page, 'input[type="password"]', password)
+        await page.wait_for_timeout(500)
+        await page.click('button:has-text("LOGIN")')
+        logger.info("Submitted login form automatically — waiting for search page...")
+        for _ in range(15):
+            await page.wait_for_timeout(2_000)
+            if await _is_on_search_page(page):
+                logger.info("Auto-login succeeded.")
+                await _dismiss_popups(page)
+                return
+    except Exception as e:
+        logger.warning(f"Auto-login attempt failed ({e}) — falling back to manual login.")
+
+    logger.info("Please log in manually in the browser window (enter email, password, solve CAPTCHA).")
     logger.info("Waiting up to 3 minutes for login + CAPTCHA... Please log in in the browser window.")
     for i in range(90):
         await page.wait_for_timeout(2_000)
@@ -1244,12 +1281,30 @@ async def run(input_csv: str, output_csv: str, headless: bool = True,
     enriched = []
 
     async with async_playwright() as pw:
-        context = await pw.chromium.launch_persistent_context(
-            SESSION_DIR,
+        # Skip Genie put a Cloudflare Turnstile on the login page. The bundled
+        # Playwright Chromium gets flagged as a bot (challenge never passes),
+        # but real Google Chrome with the automation fingerprint stripped
+        # passes the check automatically. Fall back to bundled Chromium only
+        # if Chrome isn't installed.
+        launch_kwargs = dict(
             headless=False,  # must be visible so user can solve CAPTCHA on first run
             viewport={"width": 1280, "height": 900},
             ignore_https_errors=True,
+            ignore_default_args=["--enable-automation"],
+            args=["--disable-blink-features=AutomationControlled"],
         )
+        try:
+            context = await pw.chromium.launch_persistent_context(
+                SESSION_DIR, channel="chrome", **launch_kwargs,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Couldn't launch Google Chrome ({e}); falling back to bundled "
+                "Chromium — Cloudflare may block the login."
+            )
+            context = await pw.chromium.launch_persistent_context(
+                SESSION_DIR, **launch_kwargs,
+            )
         page = context.pages[0] if context.pages else await context.new_page()
 
         await login(page, username, password)
