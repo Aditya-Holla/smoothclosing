@@ -119,13 +119,13 @@ def fetch_page(url: str) -> Optional[BeautifulSoup]:
 
 def download_bastrop(output_dir: Path, state: dict = None) -> int:
     """
-    Bastrop County – https://www.bastropcounty.gov/page/co.county_clerk _foreclosure
+    Bastrop County – https://www.bastropcounty.gov/page/co.county_clerk_foreclosure
     Scrapes all PDF links from the foreclosure page.
     """
     county_dir = output_dir / "bastrop"
     county_dir.mkdir(parents=True, exist_ok=True)
 
-    base_url = "https://www.bastropcounty.gov/page/co.county_clerk%20_foreclosure"
+    base_url = "https://www.bastropcounty.gov/page/co.county_clerk_foreclosure"
     soup = fetch_page(base_url)
     if not soup:
         return 0
@@ -421,7 +421,7 @@ def download_travis(output_dir: Path, state: dict = None) -> int:
 COUNTIES = {
     "bastrop": {
         "name": "Bastrop County",
-        "url": "https://www.bastropcounty.gov/page/co.county_clerk%20_foreclosure",
+        "url": "https://www.bastropcounty.gov/page/co.county_clerk_foreclosure",
         "downloader": download_bastrop,
     },
     "burnet": {
