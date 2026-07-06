@@ -45,3 +45,9 @@ services:
         sync: false
       - key: DISPOSITIONS_SHEET_ID
         sync: false
+      # Google Business Profile IDs (not secrets — just resource names).
+      # gbp_token.json + credentials.json are seeded onto /data, not set here.
+      - key: GBP_ACCOUNT_ID
+        value: accounts/115922127971976283530
+      - key: GBP_LOCATION_ID
+        value: locations/3874931480407978345

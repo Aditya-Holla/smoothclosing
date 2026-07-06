@@ -11,13 +11,24 @@ Usage:
     python google_business_client.py --delete-reply --review-id <id>
     python google_business_client.py --list-posts
     python google_business_client.py --create-post --type update --summary "We're open Saturdays!"
+    python google_business_client.py --create-post --type update --summary "..." --image-url "https://..." --cta CALL --dry-run
     python google_business_client.py --create-post --type offer --summary "Spring deal" --coupon "SPRING25"
     python google_business_client.py --create-post --type event --summary "Open house" --title "Spring Open House" --start "2026-04-15T10:00:00" --end "2026-04-15T12:00:00"
     python google_business_client.py --delete-post --post-name <name>
 
+Posts may carry one photo (--image-url, a publicly fetchable URL) and a
+call-to-action button (--cta CALL|LEARN_MORE|SIGN_UP|BOOK|ORDER|SHOP,
+plus --cta-url for non-CALL types). Add --dry-run to preview the exact
+request body before publishing anything.
+
 Requires credentials.json (Google Cloud OAuth2 client) in the project root.
 On first run, opens a browser for consent and saves gbp_token.json.
 """
+
+# Lazy annotations so PEP 604 unions (`str | None`) stay unevaluated — this
+# module is imported by the Streamlit dashboard under Python 3.9, where those
+# would raise TypeError at import time.
+from __future__ import annotations
 
 import argparse
 import json
@@ -36,8 +47,12 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).parent
-TOKEN_PATH = PROJECT_DIR / "gbp_token.json"
-CREDS_PATH = PROJECT_DIR / "credentials.json"
+# On hosted deploys DATA_DIR=/data (a persistent disk), and gbp_token.json /
+# credentials.json are seeded there so they survive redeploys. Locally DATA_DIR
+# is unset, so these resolve next to the code — same as before.
+_DATA_DIR = Path(os.environ.get("DATA_DIR", PROJECT_DIR)).resolve()
+TOKEN_PATH = _DATA_DIR / "gbp_token.json"
+CREDS_PATH = _DATA_DIR / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/business.manage"]
 
 # API base URLs
@@ -309,6 +324,37 @@ def build_event_post(summary: str, title: str,
     }
 
 
+CTA_TYPES = ["CALL", "LEARN_MORE", "SIGN_UP", "BOOK", "ORDER", "SHOP"]
+
+
+def attach_media(post: dict, image_url: str) -> dict:
+    """Attach a PHOTO to a post via a publicly accessible image URL.
+
+    Google fetches the image server-side, so image_url must resolve without
+    auth (e.g. an 'anyone with the link' Drive URL or a hosted file).
+    """
+    post.setdefault("media", []).append({
+        "mediaFormat": "PHOTO",
+        "sourceUrl": image_url,
+    })
+    return post
+
+
+def attach_cta(post: dict, action_type: str, url: str = None) -> dict:
+    """Attach a call-to-action button.
+
+    CALL uses the location's own phone number (no url needed). All other
+    action types require a url.
+    """
+    cta = {"actionType": action_type}
+    if action_type != "CALL":
+        if not url:
+            raise ValueError(f"CTA type {action_type} requires --cta-url")
+        cta["url"] = url
+    post["callToAction"] = cta
+    return post
+
+
 # ── CLI ───────────────────────────────────────────────────────────
 
 def main():
@@ -341,6 +387,14 @@ def main():
     parser.add_argument("--coupon", help="Coupon code (for offer posts)")
     parser.add_argument("--redeem-url", help="Redeem URL (for offer posts)")
     parser.add_argument("--terms", help="Terms and conditions (for offer posts)")
+    parser.add_argument("--image-url",
+                        help="Public image URL to attach as a photo to the post")
+    parser.add_argument("--cta", choices=CTA_TYPES,
+                        help="Call-to-action button type (e.g. CALL, LEARN_MORE)")
+    parser.add_argument("--cta-url",
+                        help="URL for the CTA button (not needed for CALL)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview the exact post body without publishing")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -442,9 +496,22 @@ def main():
         else:
             post_body = build_update_post(args.summary)
 
+        if args.image_url:
+            attach_media(post_body, args.image_url)
+        if args.cta:
+            attach_cta(post_body, args.cta, args.cta_url)
+
+        if args.dry_run:
+            print("\n── DRY RUN — nothing was posted ──")
+            print(f"POST {GBP_API}/{account_id}/{location_id}/localPosts\n")
+            print(json.dumps(post_body, indent=2, ensure_ascii=False))
+            return
+
         result = create_local_post(account_id, location_id, post_body)
         if result:
             print(f"Post created: {result.get('name', 'OK')}")
+            print(f"  State: {result.get('state', '?')} | "
+                  f"URL: {result.get('searchUrl', '(pending)')}")
         else:
             print("Failed to create post")
 

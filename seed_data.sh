@@ -25,6 +25,11 @@ FILES=(
     sms_history.csv
     skip_genie_results.csv
     pipeline_state.json
+    # Google Business Profile: OAuth token + client secret + campaign progress.
+    # These are git-ignored, so seeding is the only way they reach /data.
+    gbp_token.json
+    credentials.json
+    gbp_campaign.json
 )
 
 # Build list of files that actually exist locally.

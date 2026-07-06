@@ -8,6 +8,11 @@ Run:
     streamlit run dashboard.py
 """
 
+# Keep annotations lazy so PEP 604 unions (e.g. `dict | None`) don't get
+# evaluated at runtime — this dashboard is launched under Python 3.9, where
+# `dict | None` in a signature raises TypeError and crashes the whole app.
+from __future__ import annotations
+
 import csv
 import io
 import logging
@@ -197,10 +202,105 @@ def count_csv_rows(path: str) -> int:
 
 st.title("🏠 SmoothClosing")
 
-tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli = st.tabs(
+tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli, tab_gbp = st.tabs(
     ["📺 TV Dashboard", "Chat", "Acquisitions", "Dispositions",
-     "Heirship Affidavit", "REsimpli Sync"]
+     "Heirship Affidavit", "REsimpli Sync", "📣 GBP Posts"]
 )
+
+
+# ===========================================================================
+# GBP CAMPAIGN — auto-post the 100 GMB posts on a Mon/Wed/Fri cadence.
+# The daemon thread only starts when hosted (DATA_DIR set), so running the
+# dashboard locally never fires live posts by accident.
+# ===========================================================================
+
+@st.cache_resource
+def _start_gbp_scheduler():
+    """Launch the campaign auto-poster once per process."""
+    import threading
+
+    def _loop():
+        import gbp_scheduler
+        while True:
+            try:
+                gbp_scheduler.tick()
+            except Exception:
+                logging.exception("GBP scheduler tick failed")
+            time.sleep(1800)  # re-check every 30 minutes
+
+    t = threading.Thread(target=_loop, daemon=True, name="gbp-scheduler")
+    t.start()
+    return t
+
+
+if os.environ.get("DATA_DIR"):
+    _start_gbp_scheduler()
+
+
+with tab_gbp:
+    st.subheader("📣 Google Business Profile — auto-posting campaign")
+    try:
+        import gbp_scheduler
+
+        gposts = gbp_scheduler.load_posts()
+        gstate = gbp_scheduler.load_state(gposts)
+        gseq, gcur = gstate["sequence"], gstate["cursor"]
+        gpaused = gbp_scheduler.is_paused()
+        auto_on = bool(os.environ.get("DATA_DIR"))
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Posted", f"{gcur}/{len(gseq)}")
+        c2.metric("Cadence", "Mon·Wed·Fri 9am CT")
+        c3.metric(
+            "Status",
+            "⏸ Paused" if gpaused
+            else ("✅ Complete" if gcur >= len(gseq) else "▶ Running"),
+        )
+        st.progress(gcur / len(gseq) if gseq else 0.0)
+
+        if gcur < len(gseq):
+            nxt = gposts[gseq[gcur]]
+            st.markdown(f"**Next up:** #{gseq[gcur]} · {nxt['category']}  \n{nxt['title']}")
+        else:
+            st.success("All posts published. 🎉")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if gpaused and st.button("▶ Resume campaign"):
+                gbp_scheduler.set_paused(False)
+                st.rerun()
+            if not gpaused and st.button("⏸ Pause campaign"):
+                gbp_scheduler.set_paused(True)
+                st.rerun()
+        with col_b:
+            if st.button("📤 Post next now", disabled=gcur >= len(gseq),
+                         help="Publish the next post immediately, bypassing the schedule"):
+                with st.spinner("Publishing…"):
+                    res = gbp_scheduler.tick(force=True)
+                if res.get("action") == "posted":
+                    st.success(f"Posted #{gseq[gcur]} — now {res['posted']}/{res['total']}.")
+                else:
+                    st.warning(f"Nothing posted: {res}")
+                st.rerun()
+
+        if not auto_on:
+            st.info("Auto-posting is off here because this isn't the hosted dashboard "
+                    "(DATA_DIR unset). Use **Post next now** to publish manually. "
+                    "On the Render dashboard it posts automatically.")
+
+        if gstate["log"]:
+            st.markdown("**Recently posted**")
+            rows = [{"when": e["posted_at"][:10], "#": e["number"],
+                     "category": e["category"], "title": e["title"][:55],
+                     "state": e["state"]} for e in gstate["log"][-10:][::-1]]
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+        st.caption("Posts go out text-only with a Call button (photos can be added later). "
+                   "Auto-posting runs from this dashboard while it's online.")
+    except Exception as e:
+        st.error(f"GBP campaign unavailable: {e}")
+        st.caption("Make sure gbp_token.json and credentials.json are present in DATA_DIR "
+                   "on the server (seed them via the Render Shell).")
 
 # ===========================================================================
 # TV DASHBOARD — Big, glanceable display for an always-on TV
@@ -1314,7 +1414,7 @@ with tab_acq:
             df = pd.DataFrame(rows, columns=display_headers)
             owners_count = len(records)
             st.write(f"**{csv_name}** - {label} - {owners_count} lead(s), {len(rows)} total rows (owner + relatives)")
-            st.dataframe(df, use_container_width=True, height=400)
+            st.dataframe(df, width='stretch', height=400)
             # Download keeps the raw internal format in case anything downstream
             # needs the full pipeline columns (phone_1, rel_1_name, etc).
             raw_df = pd.read_csv(csv_name)
@@ -1338,7 +1438,7 @@ with tab_acq:
             st.warning(f"Sheet-style render failed ({e}) — showing raw CSV.")
             df = pd.read_csv(csv_name)
             st.write(f"**{csv_name}** - {label} - {len(df)} row(s)")
-            st.dataframe(df, use_container_width=True, height=400)
+            st.dataframe(df, width='stretch', height=400)
             st.download_button(
                 f"Download {csv_name}",
                 data=df.to_csv(index=False).encode("utf-8"),
@@ -1428,7 +1528,7 @@ with tab_dispo:
                     has_phone = df["Phones"].astype(str).str.strip().ne("").sum()
                     st.metric("Total buyers", total)
                     st.metric("With phones", f"{has_phone}/{total}")
-                    st.dataframe(df, use_container_width=True, height=400)
+                    st.dataframe(df, width='stretch', height=400)
                 else:
                     st.info(f"No data in {metro} yet. Add buyer names to the sheet first.")
             else:
@@ -2079,6 +2179,135 @@ with tab_aoh:
         }
 
     # -----------------------------------------------------------------------
+    # Pre-generation validation (advisory) — catches the data-entry mistakes
+    # that slip past the required-field check: placeholder witnesses, a
+    # decedent pronoun that doesn't match the name's usual gender, empty
+    # duration phrases, and near-duplicate name spellings (likely typos).
+    # -----------------------------------------------------------------------
+    def _aoh_warnings(data: dict) -> list:
+        warnings: list = []
+
+        placeholder_names = {
+            "john doe", "jane doe", "jon doe", "j. doe", "j doe",
+            "first last", "name name", "test test",
+        }
+        placeholder_addr = ("1234 address", "123 main", "address ln")
+
+        # Placeholder / incomplete affiant + witnesses
+        for label, nkey, akey, zkey in (
+            ("Affiant", "affiant_name", "affiant_address", "affiant_zip"),
+            ("Witness 1", "w1_name", "w1_address", "w1_zip"),
+            ("Witness 2", "w2_name", "w2_address", "w2_zip"),
+        ):
+            name = (data.get(nkey) or "").strip()
+            addr = (data.get(akey) or "").strip()
+            zc = (data.get(zkey) or "").strip()
+            if name.lower() in placeholder_names:
+                warnings.append(
+                    f"{label} name looks like a placeholder (“{name}”) — "
+                    f"replace it with the real person before filing."
+                )
+            if any(frag in addr.lower() for frag in placeholder_addr):
+                warnings.append(
+                    f"{label} address looks like a placeholder (“{addr}”)."
+                )
+            elif not addr or not zc:
+                warnings.append(
+                    f"{label} is missing a complete address (street and/or zip)."
+                )
+
+        # Empty duration phrase -> sentence reads "knew Decedent for ."
+        for label, dkey in (
+            ("Affiant", "affiant_duration"),
+            ("Witness 1", "w1_duration"),
+            ("Witness 2", "w2_duration"),
+        ):
+            if not (data.get(dkey) or "").strip():
+                warnings.append(
+                    f"{label} “duration” phrase is empty — the sentence "
+                    f"will read “knew Decedent for .”"
+                )
+
+        # Pronoun vs. first-name gender (advisory heuristic)
+        gender_by_name = {
+            "salvador": "he", "jose": "he", "juan": "he", "ramero": "he",
+            "ramiro": "he", "carlos": "he", "luis": "he", "miguel": "he",
+            "francisco": "he", "manuel": "he", "pedro": "he", "antonio": "he",
+            "roberto": "he", "robert": "he", "john": "he", "james": "he",
+            "william": "he", "richard": "he", "david": "he", "norman": "he",
+            "howard": "he", "charles": "he", "george": "he", "joseph": "he",
+            "thomas": "he", "michael": "he",
+            "maria": "she", "carmen": "she", "rosa": "she", "irene": "she",
+            "aurora": "she", "teresa": "she", "mary": "she", "alice": "she",
+            "elena": "she", "guadalupe": "she", "ethel": "she", "margaret": "she",
+            "dorothy": "she", "helen": "she", "patricia": "she", "linda": "she",
+            "barbara": "she", "grace": "she", "gloria": "she", "juanita": "she",
+        }
+        pronoun = (data.get("decedent_pronoun") or "").strip().lower()
+        tokens = (data.get("decedent_full_name") or "").strip().split()
+        first = tokens[0].lower() if tokens else ""
+        guessed = gender_by_name.get(first)
+        if guessed and pronoun and guessed != pronoun:
+            warnings.append(
+                f"Decedent pronoun is set to “{pronoun}”, but the first "
+                f"name “{first.title()}” is usually "
+                f"{'male' if guessed == 'he' else 'female'}. Double-check the "
+                f"pronoun — it drives the his/her wording."
+            )
+
+        # Near-duplicate name spellings (likely typos), e.g. Villareal/Villarreal
+        def _lev(a: str, b: str) -> int:
+            prev = list(range(len(b) + 1))
+            for i, ca in enumerate(a, 1):
+                cur = [i]
+                for j, cb in enumerate(b, 1):
+                    cur.append(min(
+                        prev[j] + 1, cur[j - 1] + 1,
+                        prev[j - 1] + (ca != cb),
+                    ))
+                prev = cur
+            return prev[-1]
+
+        names = []
+        for key in ("decedent_full_name", "affiant_name", "w1_name", "w2_name"):
+            if data.get(key):
+                names.append(data[key])
+        for m in data.get("marriages", []) or []:
+            if m.get("spouse_name"):
+                names.append(m["spouse_name"])
+        for grp in data.get("child_groups", []) or []:
+            if grp.get("other_parent"):
+                names.append(grp["other_parent"])
+            for k in grp.get("children", []) or []:
+                if k.get("name"):
+                    names.append(k["name"])
+        for d in data.get("subsequent_deaths", []) or []:
+            if d.get("name"):
+                names.append(d["name"])
+
+        token_orig = {}
+        for n in names:
+            for tok in n.strip().split():
+                t = tok.strip(".,").strip()
+                if len(t) >= 6:
+                    token_orig.setdefault(t.lower(), t)
+        toks = sorted(token_orig)
+        flagged = set()
+        for i in range(len(toks)):
+            for j in range(i + 1, len(toks)):
+                a, b = toks[i], toks[j]
+                if abs(len(a) - len(b)) <= 1 and _lev(a, b) == 1:
+                    if (a, b) in flagged:
+                        continue
+                    flagged.add((a, b))
+                    warnings.append(
+                        f"Possible name typo — “{token_orig[a]}” vs "
+                        f"“{token_orig[b]}” differ by one letter. "
+                        f"Verify the spelling."
+                    )
+        return warnings
+
+    # -----------------------------------------------------------------------
     # Generate buttons
     # -----------------------------------------------------------------------
     btn_col1, btn_col2 = st.columns(2)
@@ -2087,6 +2316,8 @@ with tab_aoh:
         if st.button("Generate Affidavit PDF", type="primary", key="aoh_generate"):
             data = _build_aoh_data()
             if data:
+                for _w in _aoh_warnings(data):
+                    st.warning(_w)
                 from aoh_generator import generate_aoh_pdf
                 try:
                     pdf_bytes = generate_aoh_pdf(data)
@@ -2106,6 +2337,8 @@ with tab_aoh:
         if st.button("Generate Questionnaire PDF", type="secondary", key="aoh_questionnaire"):
             data = _build_aoh_data()
             if data:
+                for _w in _aoh_warnings(data):
+                    st.warning(_w)
                 from aoh_generator import generate_questionnaire_pdf
                 try:
                     pdf_bytes = generate_questionnaire_pdf(data)
@@ -2259,12 +2492,12 @@ with tab_resimpli:
                     }
                     for r in diff["new_leads"]
                 ])
-                st.dataframe(df_new, use_container_width=True, height=200)
+                st.dataframe(df_new, width='stretch', height=200)
             if diff["status_changes"]:
                 st.write(f"**Status changes ({len(diff['status_changes'])}):**")
                 st.dataframe(
                     pd.DataFrame(diff["status_changes"]),
-                    use_container_width=True, height=200,
+                    width='stretch', height=200,
                 )
             if diff["missing_leads"]:
                 st.write(
@@ -2280,7 +2513,7 @@ with tab_resimpli:
                     }
                     for r in diff["missing_leads"]
                 ])
-                st.dataframe(df_miss, use_container_width=True, height=200)
+                st.dataframe(df_miss, width='stretch', height=200)
             if not diff["new_leads"] and not diff["status_changes"] and not diff["missing_leads"]:
                 st.info("No changes since last upload.")
 
@@ -2317,7 +2550,7 @@ with tab_resimpli:
                 }
                 for r in foreclosure_rows
             ])
-            st.dataframe(xref_df, use_container_width=True, height=240)
+            st.dataframe(xref_df, width='stretch', height=240)
 
             st.divider()
 
@@ -2406,7 +2639,7 @@ with tab_resimpli:
                     margin=dict(l=10, r=10, t=50, b=10),
                 )
                 fig.update_traces(textposition="outside")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             with chart_col2:
                 fig2 = px.bar(
@@ -2424,7 +2657,7 @@ with tab_resimpli:
                     margin=dict(l=10, r=10, t=50, b=10),
                 )
                 fig2.update_traces(textposition="outside")
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
 
             # Per-deal profit scatter
             scatter_df = pd.DataFrame([
@@ -2456,7 +2689,7 @@ with tab_resimpli:
             fig3.update_layout(
                 height=400, margin=dict(l=10, r=10, t=50, b=10),
             )
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width='stretch')
 
         except ImportError:
             # Fallback to native streamlit chart if plotly missing
@@ -2479,7 +2712,7 @@ with tab_resimpli:
         display_df["Total Offered"] = display_df["Total Offered"].apply(
             lambda x: f"${x:,.0f}"
         )
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width='stretch', hide_index=True)
 
         # Per-manager drill-down
         with st.expander("Drill into a specific Acquisition Manager"):
@@ -2504,7 +2737,7 @@ with tab_resimpli:
                     }
                     for r in drill_rows
                 ])
-                st.dataframe(drill_df, use_container_width=True, hide_index=True)
+                st.dataframe(drill_df, width='stretch', hide_index=True)
                 st.caption(
                     f"**{am_choice}** has **{len(drill_rows)}** active deal(s) "
                     f"totaling **${agg[am_choice]['profit']:,.0f}** in expected profit."
@@ -2522,7 +2755,7 @@ with tab_resimpli:
         df_all = pd.DataFrame([
             {c: r.get(c, "") for c in populated_cols} for r in rows
         ])
-        st.dataframe(df_all, use_container_width=True, height=400)
+        st.dataframe(df_all, width='stretch', height=400)
 
         st.download_button(
             "Download cleaned CSV",
@@ -2701,7 +2934,7 @@ with tab_resimpli:
                     height=360, margin=dict(l=10, r=10, t=50, b=10),
                     showlegend=False,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             with chart_col2:
                 type_df = pd.DataFrame([
@@ -2724,7 +2957,7 @@ with tab_resimpli:
                     showlegend=False,
                 )
                 fig2.update_traces(textposition="outside")
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
 
             # Per-property profit waterfall
             sorted_inv = sorted(
@@ -2760,7 +2993,7 @@ with tab_resimpli:
                 margin=dict(l=10, r=10, t=50, b=10),
             )
             fig3.update_traces(textposition="outside")
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width='stretch')
 
         except ImportError:
             pass
@@ -2781,7 +3014,7 @@ with tab_resimpli:
             inv_df = inv_df.sort_values("_sort", ascending=False).drop(
                 columns=["_sort"]
             )
-        st.dataframe(inv_df, use_container_width=True, height=400)
+        st.dataframe(inv_df, width='stretch', height=400)
 
         st.download_button(
             "Download cleaned inventory CSV",
