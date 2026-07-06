@@ -917,12 +917,31 @@ def run(limit: int = None, headless: bool = False, sheet_id: str = None,
         tabs_to_run = [(ws, tab or ws.title)]
 
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            SESSION_DIR,
+        # Launch real Google Chrome, same as skipgenie.py: the shared
+        # .skipgenie_session profile gets written by Chrome (v149+), and the
+        # bundled Chromium (v145 "Chrome for Testing") refuses to open a
+        # profile created by a newer version — it exits instantly with
+        # TargetClosedError. Real Chrome also passes the Cloudflare Turnstile
+        # on the Skip Genie login, which flags the bundled build as a bot.
+        launch_kwargs = dict(
             headless=headless,
             viewport={"width": 1280, "height": 900},
             ignore_https_errors=True,
+            ignore_default_args=["--enable-automation"],
+            args=["--disable-blink-features=AutomationControlled"],
         )
+        try:
+            context = p.chromium.launch_persistent_context(
+                SESSION_DIR, channel="chrome", **launch_kwargs,
+            )
+        except Exception as e:
+            logger.warning(
+                "Couldn't launch Google Chrome (%s); falling back to bundled "
+                "Chromium — Cloudflare may block the login.", e,
+            )
+            context = p.chromium.launch_persistent_context(
+                SESSION_DIR, **launch_kwargs,
+            )
         page = context.pages[0] if context.pages else context.new_page()
 
         if not ensure_logged_in(page, email=email, password=password):
