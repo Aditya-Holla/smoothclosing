@@ -9,7 +9,13 @@ on:
   schedule:
     # 14:00 UTC = 9am Central (CDT) / 8am (CST). Mon (1) & Thu (4).
     - cron: '0 14 * * 1,4'
-  workflow_dispatch:            # manual "Run workflow" button for testing
+  workflow_dispatch:            # manual "Run workflow" button
+    inputs:
+      mode:
+        description: "post = publish next; test = auth check only (no post)"
+        type: choice
+        options: [post, test]
+        default: post
 
 # Never run two posts at once (prevents any double-post if a run overlaps).
 concurrency: gbp-campaign
@@ -37,9 +43,16 @@ jobs:
         env:
           GBP_ACCOUNT_ID: accounts/115922127971976283530
           GBP_LOCATION_ID: locations/3874931480407978345
-        run: python gbp_scheduler.py --post-next --force
+        run: |
+          if [ "${{ inputs.mode }}" = "test" ]; then
+            echo "TEST MODE — verifying auth only, not posting"
+            python google_business_client.py --list-posts
+          else
+            python gbp_scheduler.py --post-next --force
+          fi
 
       - name: Commit advanced campaign state
+        if: ${{ inputs.mode != 'test' }}
         run: |
           git config user.name  "gbp-campaign-bot"
           git config user.email "actions@users.noreply.github.com"
