@@ -255,14 +255,36 @@ with tab_gbp:
 # ===========================================================================
 
 with tab_tv:
-    # Auto-refresh is DISABLED. It caused the Streamlit script to rerun
-    # every 60 seconds, which orphaned any long-running pipeline subprocess
-    # because st.button() returns False on a rerun (the button-block code
-    # path is skipped on every rerun after the click). The TV dashboard
-    # is glance-only; F5 to refresh the underlying data when needed.
-    if st.button("🔄 Refresh data", key="tv_manual_refresh",
-                 help="Re-read the latest REsimpli CSVs from disk"):
-        st.rerun()
+    # This is a wall display, so it auto-refreshes on a timer. Auto-refresh was
+    # removed once because it orphaned long-running pipelines — that no longer
+    # applies (the pipeline runs as a detached process, tracked in
+    # pipeline.state). Two safeguards keep it well-behaved:
+    #   1. It's a PER-SESSION toggle, so an operator can turn it off in their
+    #      own browser without affecting the TV (Streamlit sessions are
+    #      per-browser).
+    #   2. It PAUSES while a pipeline is actively running, so it can never
+    #      disturb a live run or its monitoring.
+    _c_auto, _c_now = st.columns([1, 4])
+    with _c_auto:
+        _tv_auto = st.toggle("🔄 Auto", value=True, key="tv_autorefresh_on",
+                             help="Auto-refresh this display every 30 seconds")
+    with _c_now:
+        if st.button("Refresh now", key="tv_manual_refresh",
+                     help="Re-read the latest REsimpli CSVs from disk"):
+            st.rerun()
+
+    _pstate_f = _data("pipeline.state")
+    _pipe_running = (_pstate_f.exists()
+                     and _pstate_f.read_text().strip().startswith("running"))
+    if _tv_auto and not _pipe_running:
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=30_000, key="tv_autorefresh_tick")
+        except Exception:
+            pass
+    elif _tv_auto and _pipe_running:
+        st.caption("⏸ Auto-refresh paused while the pipeline is running "
+                   "(resumes automatically when it finishes).")
 
     # Read latest snapshots from disk
     leads_path = _data("resimpli_latest_leads.csv")
