@@ -29,6 +29,7 @@ sms_history.csv
 # GBP campaign runtime state — lives in DATA_DIR on the server, not in git
 gbp_campaign.json
 gbp_campaign.paused
+gbp_campaign.lock
 
 # Downloaded PDFs (too large for git)
 input_pdfs/

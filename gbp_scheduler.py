@@ -1,7 +1,7 @@
 """
 GBP campaign scheduler — drips the 100 Smooth Closing posts to Google Business
-Profile on a Mon/Wed/Fri cadence, one per posting day, with categories spread
-so no two consecutive posts share a category.
+Profile twice a week (Mon & Thu, never back-to-back), one per posting day, with
+categories spread so no two consecutive posts share a category.
 
 Content comes from gmb_posts.json (parsed from "Corrected GMB Posts.docx").
 Progress is tracked in gbp_campaign.json so re-runs never double-post.
@@ -17,7 +17,7 @@ Usage:
     python gbp_scheduler.py --post-next          # publish the next post, mark it done
 
 When imported by the dashboard, call tick() on a timer to auto-publish one post
-per Mon/Wed/Fri — see tick() at the bottom.
+per posting day (Mon & Thu) — see tick() at the bottom.
 """
 
 # Lazy annotations: this module is imported by the Streamlit dashboard under
@@ -28,7 +28,9 @@ import argparse
 import json
 import logging
 import os
+import time
 from collections import defaultdict, deque
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -43,9 +45,33 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", PROJECT_DIR)).resolve()
 POSTS_PATH = PROJECT_DIR / "gmb_posts.json"
 STATE_PATH = DATA_DIR / "gbp_campaign.json"
 PAUSE_PATH = DATA_DIR / "gbp_campaign.paused"
+LOCK_PATH = DATA_DIR / "gbp_campaign.lock"
 
-# Posting days: Monday=0, Wednesday=2, Friday=4
-POSTING_WEEKDAYS = {0, 2, 4}
+
+@contextmanager
+def _campaign_lock():
+    """Cross-process exclusive lock so the daemon and the dashboard's manual
+    button can never publish at the same time. Degrades to a no-op if flock
+    isn't available (non-Unix)."""
+    f = None
+    try:
+        import fcntl
+        f = open(LOCK_PATH, "w")
+        fcntl.flock(f, fcntl.LOCK_EX)
+    except Exception:
+        f = None
+    try:
+        yield
+    finally:
+        if f is not None:
+            try:
+                import fcntl
+                fcntl.flock(f, fcntl.LOCK_UN)
+            finally:
+                f.close()
+
+# Posting days: twice a week, never back-to-back — Monday=0, Thursday=3.
+POSTING_WEEKDAYS = {0, 3}
 POST_HOUR = 9  # publish at/after 9am local (Central)
 
 # Austin is Central time; fall back to UTC if tz data is unavailable.
@@ -152,7 +178,6 @@ def publish_next(state: dict, posts: dict, dry_run: bool) -> bool:
     summary = compose_summary(post)
 
     body = g.build_update_post(summary)
-    g.attach_cta(body, "CALL")
 
     ids = g._resolve_ids()
     if not ids:
@@ -163,10 +188,29 @@ def publish_next(state: dict, posts: dict, dry_run: bool) -> bool:
     header = (f"#{num} · {post['category']} · "
               f"(sequence {state['cursor'] + 1}/{len(seq)})")
     if dry_run:
+        import gbp_photos
+        entry = gbp_photos._load_map().get(str(num), {})
         print(f"\n── DRY RUN — next up: {header} ──")
+        print(f"photo (would download+geotag+stage): {entry.get('name', '(none)')}")
+        g.attach_cta(body, "CALL")
         print(f"POST {g.GBP_API}/{account_id}/{location_id}/localPosts\n")
         print(json.dumps(body, indent=2, ensure_ascii=False))
         return False
+
+    # Attach the post's geotagged photo if one can be sourced/staged. A photo
+    # problem must never block the post — it just goes out text-only that day.
+    try:
+        import gbp_photos
+        image_url = gbp_photos.photo_url_for_post(post)
+        if image_url:
+            g.attach_media(body, image_url)
+            print(f"  photo: {image_url}")
+        else:
+            print("  photo: none available — posting text-only")
+    except Exception:
+        logger.exception("Photo sourcing failed for post %s", num)
+
+    g.attach_cta(body, "CALL")
 
     print(f"Publishing {header} …")
     result = g.create_local_post(account_id, location_id, body)
@@ -220,23 +264,46 @@ def tick(force: bool = False) -> dict:
     Returns a small status dict describing what happened.
     """
     posts = load_posts()
-    state = load_state(posts)
-    now = datetime.now(LOCAL_TZ)
+    with _campaign_lock():
+        state = load_state(posts)
+        now = datetime.now(LOCAL_TZ)
 
-    if state["cursor"] >= len(state["sequence"]):
-        return {"action": "complete", "posted": state["cursor"],
-                "total": len(state["sequence"])}
-    if is_paused() and not force:
-        return {"action": "paused"}
-    if not force:
-        if now.weekday() not in POSTING_WEEKDAYS or now.hour < POST_HOUR:
-            return {"action": "idle", "reason": "not a posting time"}
-        if _already_posted_today(state):
-            return {"action": "idle", "reason": "already posted today"}
+        if state["cursor"] >= len(state["sequence"]):
+            return {"action": "complete", "posted": state["cursor"],
+                    "total": len(state["sequence"])}
+        if is_paused() and not force:
+            return {"action": "paused"}
+        if not force:
+            if now.weekday() not in POSTING_WEEKDAYS or now.hour < POST_HOUR:
+                return {"action": "idle", "reason": "not a posting time"}
+            if _already_posted_today(state):
+                return {"action": "idle", "reason": "already posted today"}
 
-    posted = publish_next(state, posts, dry_run=False)
-    return {"action": "posted" if posted else "error",
-            "posted": state["cursor"], "total": len(state["sequence"])}
+        posted = publish_next(state, posts, dry_run=False)
+        return {"action": "posted" if posted else "error",
+                "posted": state["cursor"], "total": len(state["sequence"])}
+
+
+def run_daemon(interval: int = 1800) -> None:
+    """Run forever, auto-posting on the Mon/Thu schedule. Started by the Docker
+    CMD on Render so posting runs 24/7 independent of anyone opening the app.
+
+    Refuses to run without DATA_DIR set, so `--daemon` on a laptop can never
+    fire live posts by accident.
+    """
+    if not os.environ.get("DATA_DIR"):
+        print("Refusing to start daemon without DATA_DIR set (safety guard "
+              "against accidental live posting from a local machine).")
+        return
+    logging.info("GBP daemon up — posting weekdays %s at/after %02d:00 (%s), "
+                 "checking every %ds", sorted(POSTING_WEEKDAYS), POST_HOUR,
+                 LOCAL_TZ, interval)
+    while True:
+        try:
+            logging.info("gbp tick: %s", tick())
+        except Exception:
+            logging.exception("GBP daemon tick failed")
+        time.sleep(interval)
 
 
 # ── CLI ───────────────────────────────────────────────────────────
@@ -244,13 +311,13 @@ def tick(force: bool = False) -> dict:
 def cmd_plan(state: dict, posts: dict) -> None:
     seq = state["sequence"]
     dates = posting_dates(date.today(), len(seq))
-    print(f"\nSmooth Closing GBP campaign — {len(seq)} posts, Mon/Wed/Fri\n")
+    print(f"\nSmooth Closing GBP campaign — {len(seq)} posts, Mon & Thu\n")
     for i, (num, d) in enumerate(zip(seq, dates)):
         done = "✓" if i < state["cursor"] else " "
         print(f"  [{done}] {d:%a %Y-%m-%d}  #{num:>3}  {posts[num]['category']}")
         print(f"          {posts[num]['title']}")
     last = dates[-1]
-    print(f"\n  Runs through {last:%Y-%m-%d} (~{len(seq)//3} weeks).")
+    print(f"\n  Runs through {last:%Y-%m-%d} (~{len(seq)//2} weeks).")
 
 
 def cmd_status(state: dict, posts: dict) -> None:
@@ -275,6 +342,8 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show progress")
     parser.add_argument("--post-next", action="store_true",
                         help="Publish the next post in the sequence")
+    parser.add_argument("--daemon", action="store_true",
+                        help="Run forever, auto-posting on schedule (hosted use)")
     parser.add_argument("--dry-run", action="store_true",
                         help="With --post-next, preview without publishing")
     parser.add_argument("--force", action="store_true",
@@ -288,6 +357,10 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    if args.daemon:
+        run_daemon()
+        return
+
     posts = load_posts()
     state = load_state(posts)
 
@@ -297,7 +370,7 @@ def main():
         cmd_status(state, posts)
     elif args.post_next:
         if not args.dry_run and not args.force and date.today().weekday() not in POSTING_WEEKDAYS:
-            print(f"Today ({date.today():%A}) isn't a posting day (Mon/Wed/Fri). "
+            print(f"Today ({date.today():%A}) isn't a posting day (Mon/Thu). "
                   f"Use --force to post anyway.")
             return
         publish_next(state, posts, args.dry_run)

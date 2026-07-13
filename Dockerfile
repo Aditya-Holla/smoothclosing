@@ -42,6 +42,10 @@ ENV STREAMLIT_SERVER_HEADLESS=true \
 EXPOSE 8501
 
 # Render injects $PORT — fall back to 8501 for local docker run.
-CMD streamlit run dashboard.py \
+# The GBP campaign daemon runs in the background (auto-posts on the Mon/Thu
+# schedule, 24/7, independent of the web UI); Streamlit runs in the foreground
+# as PID 1 so it handles container signals.
+CMD python gbp_scheduler.py --daemon & \
+    exec streamlit run dashboard.py \
     --server.address=0.0.0.0 \
     --server.port=${PORT:-8501}

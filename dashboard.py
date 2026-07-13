@@ -209,33 +209,10 @@ tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli, tab_gbp = st.tabs(
 
 
 # ===========================================================================
-# GBP CAMPAIGN — auto-post the 100 GMB posts on a Mon/Wed/Fri cadence.
-# The daemon thread only starts when hosted (DATA_DIR set), so running the
-# dashboard locally never fires live posts by accident.
+# GBP CAMPAIGN — status + manual controls. Automatic posting is handled by a
+# dedicated 24/7 daemon (gbp_scheduler.py --daemon, started by the Docker CMD),
+# not from here, so it runs even when nobody has the dashboard open.
 # ===========================================================================
-
-@st.cache_resource
-def _start_gbp_scheduler():
-    """Launch the campaign auto-poster once per process."""
-    import threading
-
-    def _loop():
-        import gbp_scheduler
-        while True:
-            try:
-                gbp_scheduler.tick()
-            except Exception:
-                logging.exception("GBP scheduler tick failed")
-            time.sleep(1800)  # re-check every 30 minutes
-
-    t = threading.Thread(target=_loop, daemon=True, name="gbp-scheduler")
-    t.start()
-    return t
-
-
-if os.environ.get("DATA_DIR"):
-    _start_gbp_scheduler()
-
 
 with tab_gbp:
     st.subheader("📣 Google Business Profile — auto-posting campaign")
@@ -250,7 +227,7 @@ with tab_gbp:
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Posted", f"{gcur}/{len(gseq)}")
-        c2.metric("Cadence", "Mon·Wed·Fri 9am CT")
+        c2.metric("Cadence", "Mon·Thu 9am CT")
         c3.metric(
             "Status",
             "⏸ Paused" if gpaused
