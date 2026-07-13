@@ -1,0 +1,10 @@
+# Minimal deps for the GitHub Actions GBP poster — just what gbp_scheduler.py,
+# google_business_client.py, gbp_photos.py and gbp_image.py import. Keeps the
+# Action fast (no streamlit / playwright / pandas / PyMuPDF).
+requests>=2.31.0
+python-dotenv>=1.0.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+Pillow>=10.0.0
+piexif>=1.1.3
+pillow-heif>=0.16.0

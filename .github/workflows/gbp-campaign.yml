@@ -1,0 +1,52 @@
+name: GBP Campaign
+
+# Posts one Smooth Closing GBP update twice a week (Mon & Thu), with a
+# geotagged property photo + Call button, then commits the advanced campaign
+# cursor back to the repo. No server needed — this replaces the old Render
+# daemon (free-tier Render sleeps and has no persistent disk).
+
+on:
+  schedule:
+    # 14:00 UTC = 9am Central (CDT) / 8am (CST). Mon (1) & Thu (4).
+    - cron: '0 14 * * 1,4'
+  workflow_dispatch:            # manual "Run workflow" button for testing
+
+# Never run two posts at once (prevents any double-post if a run overlaps).
+concurrency: gbp-campaign
+
+permissions:
+  contents: write               # commit the updated gbp_campaign.json
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install -r requirements-gbp.txt
+
+      - name: Restore OAuth token from secret
+        run: printf '%s' "${{ secrets.GBP_TOKEN_JSON }}" | base64 -d > gbp_token.json
+
+      - name: Publish the next post
+        env:
+          GBP_ACCOUNT_ID: accounts/115922127971976283530
+          GBP_LOCATION_ID: locations/3874931480407978345
+        run: python gbp_scheduler.py --post-next --force
+
+      - name: Commit advanced campaign state
+        run: |
+          git config user.name  "gbp-campaign-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add gbp_campaign.json
+          git diff --cached --quiet || git commit -m "GBP: advance campaign cursor [skip ci]"
+          git push
+
+      - name: Clean up token
+        if: always()
+        run: rm -f gbp_token.json

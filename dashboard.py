@@ -216,23 +216,20 @@ tab_tv, tab_chat, tab_acq, tab_dispo, tab_aoh, tab_resimpli, tab_gbp = st.tabs(
 
 with tab_gbp:
     st.subheader("📣 Google Business Profile — auto-posting campaign")
+    st.caption("Posting runs automatically on **GitHub Actions** (Mon & Thu, ~9am CT) — "
+               "a geotagged property photo + Call button per post. This tab is a "
+               "read-only status view.")
     try:
         import gbp_scheduler
 
         gposts = gbp_scheduler.load_posts()
         gstate = gbp_scheduler.load_state(gposts)
         gseq, gcur = gstate["sequence"], gstate["cursor"]
-        gpaused = gbp_scheduler.is_paused()
-        auto_on = bool(os.environ.get("DATA_DIR"))
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Posted", f"{gcur}/{len(gseq)}")
-        c2.metric("Cadence", "Mon·Thu 9am CT")
-        c3.metric(
-            "Status",
-            "⏸ Paused" if gpaused
-            else ("✅ Complete" if gcur >= len(gseq) else "▶ Running"),
-        )
+        c2.metric("Cadence", "Mon·Thu ~9am CT")
+        c3.metric("Status", "✅ Complete" if gcur >= len(gseq) else "▶ Running")
         st.progress(gcur / len(gseq) if gseq else 0.0)
 
         if gcur < len(gseq):
@@ -241,30 +238,6 @@ with tab_gbp:
         else:
             st.success("All posts published. 🎉")
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if gpaused and st.button("▶ Resume campaign"):
-                gbp_scheduler.set_paused(False)
-                st.rerun()
-            if not gpaused and st.button("⏸ Pause campaign"):
-                gbp_scheduler.set_paused(True)
-                st.rerun()
-        with col_b:
-            if st.button("📤 Post next now", disabled=gcur >= len(gseq),
-                         help="Publish the next post immediately, bypassing the schedule"):
-                with st.spinner("Publishing…"):
-                    res = gbp_scheduler.tick(force=True)
-                if res.get("action") == "posted":
-                    st.success(f"Posted #{gseq[gcur]} — now {res['posted']}/{res['total']}.")
-                else:
-                    st.warning(f"Nothing posted: {res}")
-                st.rerun()
-
-        if not auto_on:
-            st.info("Auto-posting is off here because this isn't the hosted dashboard "
-                    "(DATA_DIR unset). Use **Post next now** to publish manually. "
-                    "On the Render dashboard it posts automatically.")
-
         if gstate["log"]:
             st.markdown("**Recently posted**")
             rows = [{"when": e["posted_at"][:10], "#": e["number"],
@@ -272,12 +245,10 @@ with tab_gbp:
                      "state": e["state"]} for e in gstate["log"][-10:][::-1]]
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-        st.caption("Posts go out text-only with a Call button (photos can be added later). "
-                   "Auto-posting runs from this dashboard while it's online.")
+        st.caption("To pause: disable the **GBP Campaign** workflow in the repo's "
+                   "GitHub → Actions tab. Status here updates on each post.")
     except Exception as e:
-        st.error(f"GBP campaign unavailable: {e}")
-        st.caption("Make sure gbp_token.json and credentials.json are present in DATA_DIR "
-                   "on the server (seed them via the Render Shell).")
+        st.error(f"GBP status unavailable: {e}")
 
 # ===========================================================================
 # TV DASHBOARD — Big, glanceable display for an always-on TV

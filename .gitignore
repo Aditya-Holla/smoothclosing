@@ -26,8 +26,8 @@ sms_history.csv
 # State (tracked separately — committed to keep incremental processing)
 # pipeline_state.json  ← intentionally NOT ignored
 
-# GBP campaign runtime state — lives in DATA_DIR on the server, not in git
-gbp_campaign.json
+# GBP campaign: gbp_campaign.json IS committed (source of truth for the
+# GitHub Actions poster). Only the transient pause/lock files are ignored.
 gbp_campaign.paused
 gbp_campaign.lock
 

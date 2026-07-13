@@ -43,7 +43,10 @@ PROJECT_DIR = Path(__file__).parent
 # DATA_DIR so they persist on Render's disk across redeploys.
 DATA_DIR = Path(os.environ.get("DATA_DIR", PROJECT_DIR)).resolve()
 POSTS_PATH = PROJECT_DIR / "gmb_posts.json"
-STATE_PATH = DATA_DIR / "gbp_campaign.json"
+# Campaign state is committed to the repo — GitHub Actions reads it, posts the
+# next item, and commits the advanced cursor back. It is the single source of
+# truth (the Render dashboard only reads it to show status).
+STATE_PATH = PROJECT_DIR / "gbp_campaign.json"
 PAUSE_PATH = DATA_DIR / "gbp_campaign.paused"
 LOCK_PATH = DATA_DIR / "gbp_campaign.lock"
 
