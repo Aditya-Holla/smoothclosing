@@ -100,7 +100,7 @@
     93,
     99
   ],
-  "cursor": 2,
+  "cursor": 3,
   "log": [
     {
       "number": 37,
@@ -121,6 +121,16 @@
       "name": "accounts/115922127971976283530/locations/3874931480407978345/localPosts/6463900653584779486",
       "state": "PROCESSING",
       "searchUrl": "https://local.google.com/place?id=5231154768306624045&use=posts&lpsid=CIHM0ogKENjSsoip89rb2QE"
+    },
+    {
+      "number": 51,
+      "category": "SPECIFIC SCENARIOS",
+      "title": "Going Through a Difficult Life Event? We Buy Houses in Austin Without the Added Stress",
+      "sequence_index": 2,
+      "posted_at": "2026-07-16T15:42:39+00:00",
+      "name": "accounts/115922127971976283530/locations/3874931480407978345/localPosts/2524929738046840265",
+      "state": "PROCESSING",
+      "searchUrl": "https://local.google.com/place?id=5231154768306624045&use=posts&lpsid=CIHM0ogKELbN9JeX3J-IzAE"
     }
   ]
 }
