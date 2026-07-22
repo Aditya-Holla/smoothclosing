@@ -289,8 +289,10 @@ with tab_tv:
     # Read latest snapshots from disk
     leads_path = _data("resimpli_latest_leads.csv")
     inv_path = _data("resimpli_latest_inventory.csv")
+    calllog_path = _data("latest_calllog.csv")
 
-    if not leads_path.exists() and not inv_path.exists():
+    if (not leads_path.exists() and not inv_path.exists()
+            and not calllog_path.exists()):
         st.markdown(
             "<div style='text-align:center; padding:80px; color:#888; "
             "font-size:24px;'>📺 No data yet. Upload CSVs in the "
@@ -689,6 +691,117 @@ with tab_tv:
                 """,
                 unsafe_allow_html=True,
             )
+
+        # ---- CALL & TEXT ACTIVITY LEADERBOARD ----------------------------
+        # Ranks team members by outbound calls + texts, from the uploaded
+        # Call Logs export. Shown on Overview + Under Contract views.
+        if show_leaderboard and calllog_path.exists():
+            try:
+                from calllog_importer import (
+                    parse_calllog_csv, summarize_by_person,
+                )
+                call_rows = parse_calllog_csv(calllog_path)
+                call_stats = summarize_by_person(call_rows)
+            except Exception:
+                call_stats = None
+
+            if call_stats and call_stats["ranked"]:
+                st.markdown(
+                    "<div style='font-size:34px; font-weight:800; "
+                    "margin: 36px 0 8px 0;'>📞 Call &amp; Text Activity</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f"""
+                    <div style='display:flex; gap:48px; margin-bottom:20px;
+                                color:#b8d4ea; font-size:16px;'>
+                        <div><b style='color:#4CC9F0; font-size:22px;'>
+                            {call_stats["total_calls"]:,}</b> calls placed</div>
+                        <div><b style='color:#90BE6D; font-size:22px;'>
+                            {call_stats["total_texts"]:,}</b> texts sent</div>
+                        <div><b style='color:#F8961E; font-size:22px;'>
+                            {call_stats["total_talk_seconds"] // 60:,}</b>
+                            min talk time</div>
+                        <div style='color:#7ba6cc;'>
+                            {call_stats["inbound_calls"]:,} inbound calls •
+                            {call_stats["inbound_texts"]:,} inbound texts •
+                            {call_stats["missed_calls"]:,} missed</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                max_act = call_stats["ranked"][0][1]["total"] or 1
+                for i, (name, d) in enumerate(call_stats["ranked"]):
+                    medal = medals[i] if i < 3 else f"  {i+1}."
+                    color = person_colors[i % len(person_colors)]
+                    pct = d["total"] / max_act * 100
+                    initials = "".join(
+                        w[0].upper() for w in name.split() if w
+                    )[:2] or "?"
+                    talk_min = d["talk_seconds"] // 60
+                    st.markdown(
+                        f"""
+                        <div style='
+                            background: linear-gradient(90deg,
+                                rgba(30,58,95,0.5) 0%, rgba(30,58,95,0.1) 100%);
+                            padding: 18px 28px;
+                            border-radius: 14px;
+                            margin-bottom: 12px;
+                            border-left: 6px solid {color};
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                        '>
+                            <div style='display: flex; align-items: center;
+                                        justify-content: space-between;'>
+                                <div style='display: flex; align-items: center;
+                                            gap: 24px;'>
+                                    <div style='font-size: 38px; font-weight: 700;
+                                                min-width: 56px;'>{medal}</div>
+                                    <div style='
+                                        width: 56px; height: 56px;
+                                        border-radius: 50%;
+                                        background: {color}; color: #0f1729;
+                                        display: flex; align-items: center;
+                                        justify-content: center;
+                                        font-size: 22px; font-weight: 800;
+                                    '>{initials}</div>
+                                    <div>
+                                        <div style='font-size: 28px;
+                                                    font-weight: 700;
+                                                    color: #ffffff;
+                                                    line-height: 1.1;'>{name}</div>
+                                        <div style='font-size: 14px;
+                                                    color: #b8d4ea;
+                                                    margin-top: 4px;'>
+                                            📞 {d["calls"]} calls
+                                            • 💬 {d["texts"]} texts
+                                            • ⏱ {talk_min} min talk
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style='text-align: right;'>
+                                    <div style='font-size: 40px; font-weight: 900;
+                                                color: {color};
+                                                line-height: 1;'>{d["total"]}</div>
+                                    <div style='font-size: 13px; color: #7ba6cc;
+                                                margin-top: 4px;'>
+                                        total touches</div>
+                                </div>
+                            </div>
+                            <div style='
+                                margin-top: 12px;
+                                background: rgba(255,255,255,0.08);
+                                border-radius: 8px; height: 12px;
+                                overflow: hidden;'>
+                                <div style='width: {pct:.1f}%; height: 100%;
+                                    background: linear-gradient(90deg,
+                                        {color} 0%, {color}99 100%);
+                                    border-radius: 8px;'></div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
         # ---- INVENTORY STATUS BREAKDOWN ----------------------------------
         if inv_rows and show_inventory_status:
@@ -2286,6 +2399,62 @@ with tab_resimpli:
             > before exporting if you only want to sync that subset.
             """
         )
+
+    # ---------------- Call Logs upload (activity leaderboard) ---------------
+    with st.expander("📞 Call & Text Activity — upload Call Logs export"):
+        st.caption(
+            "Export the **Call Logs** CSV from REsimpli (Reporting → Call Logs "
+            "→ Export). Uploading it here powers the **Call & Text Activity** "
+            "leaderboard on the TV Dashboard, ranking each team member by the "
+            "number of calls placed and texts sent."
+        )
+        call_upload = st.file_uploader(
+            "Upload Call Logs CSV export",
+            type=["csv"],
+            key="calllog_upload",
+            help="Drop the exported Call Logs CSV here",
+        )
+        if call_upload:
+            from calllog_importer import (
+                parse_calllog_csv, summarize_by_person,
+            )
+            try:
+                call_rows = parse_calllog_csv(call_upload)
+                # Persist to disk so the TV Dashboard can read it
+                with open(_data("latest_calllog.csv"), "wb") as fh:
+                    call_upload.seek(0)
+                    fh.write(call_upload.read())
+                cstats = summarize_by_person(call_rows)
+            except Exception as e:
+                st.error(f"Failed to parse Call Logs CSV: {e}")
+                cstats = None
+
+            if cstats and cstats["ranked"]:
+                st.success(
+                    f"Parsed {len(call_rows)} log entries — "
+                    f"{cstats['total_calls']:,} calls, "
+                    f"{cstats['total_texts']:,} texts across "
+                    f"{cstats['people']} people."
+                )
+                st.dataframe(
+                    pd.DataFrame([
+                        {
+                            "Rank": i + 1,
+                            "Team Member": name,
+                            "Calls": d["calls"],
+                            "Texts": d["texts"],
+                            "Total": d["total"],
+                            "Talk (min)": d["talk_seconds"] // 60,
+                        }
+                        for i, (name, d) in enumerate(cstats["ranked"])
+                    ]),
+                    hide_index=True, width='stretch',
+                )
+            elif cstats:
+                st.warning(
+                    "No outbound activity found in that file — check that the "
+                    "'Caller/Sender' and 'Communication Type' columns are present."
+                )
 
     # ---------------- Upload ------------------------------------------------
     uploaded = st.file_uploader(
