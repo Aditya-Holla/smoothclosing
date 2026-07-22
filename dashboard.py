@@ -2401,7 +2401,8 @@ with tab_resimpli:
         )
 
     # ---------------- Call Logs upload (activity leaderboard) ---------------
-    with st.expander("📞 Call & Text Activity — upload Call Logs export"):
+    st.subheader("📞 Call & Text Activity")
+    with st.expander("Upload Call Logs export", expanded=True):
         st.caption(
             "Export the **Call Logs** CSV from REsimpli (Reporting → Call Logs "
             "→ Export). Uploading it here powers the **Call & Text Activity** "
