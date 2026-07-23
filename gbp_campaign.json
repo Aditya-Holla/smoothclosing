@@ -100,7 +100,7 @@
     93,
     99
   ],
-  "cursor": 4,
+  "cursor": 5,
   "log": [
     {
       "number": 37,
@@ -141,6 +141,16 @@
       "name": "accounts/115922127971976283530/locations/3874931480407978345/localPosts/6820997309716609534",
       "state": "PROCESSING",
       "searchUrl": "https://local.google.com/place?id=5231154768306624045&use=posts&lpsid=CIHM0ogKEKrnvOO_79jM3wE"
+    },
+    {
+      "number": 25,
+      "category": "WHY SMOOTH CLOSING",
+      "title": "Why Austin Homeowners Choose Smooth Closing Over Traditional Real Estate Agents",
+      "sequence_index": 4,
+      "posted_at": "2026-07-23T15:56:20+00:00",
+      "name": "accounts/115922127971976283530/locations/3874931480407978345/localPosts/4651749289270193297",
+      "state": "PROCESSING",
+      "searchUrl": "https://local.google.com/place?id=5231154768306624045&use=posts&lpsid=CIHM0ogKEImQ3ra8ouT27QE"
     }
   ]
 }
