@@ -2,17 +2,27 @@
 calllog_importer.py
 -------------------
 Parse the "Exported Call Logs" CSV (REsimpli / RingCentral communication
-history) and rank team members by outbound activity — how many calls and
-texts each person made.
+history) and rank team members by call + text activity for the leaderboard.
 
 The key columns are:
-  - "Communication Type" — Outgoing/Incoming Call, Outgoing/Incoming SMS/MMS,
+  - "Communication Type" -- Outgoing/Incoming Call, Outgoing/Incoming SMS/MMS,
     Missed Call, Voice Mail
-  - "Caller/Sender"       — the team member who placed the call / sent the text.
+  - "Caller/Sender"       -- the team member who placed the call / sent the text.
     Only OUTBOUND rows carry a sender; inbound rows (a lead calling/texting in,
-    missed calls, voicemails) leave it blank, so grouping by a non-empty sender
-    naturally isolates agent-initiated activity.
-  - "Call Duration"       — HH:MM:SS talk time (00:00:00 for texts)
+    missed calls, voicemails) leave it blank.
+  - "Lead Source"         -- which marketing channel / tracking number the lead
+    used. A small number of these are dedicated numbers for a specific team
+    member (see INBOUND_LEAD_SOURCE_ATTRIBUTION below); an answered/connected
+    inbound call on one of those numbers is credited to that person.
+  - "Call Duration"       -- HH:MM:SS talk time (00:00:00 for texts)
+
+Counting rules for the leaderboard:
+  - Outbound calls/texts (has a "Caller/Sender") always count for that person.
+  - Missed calls never count for anyone.
+  - Inbound calls that were answered/connected count for a person ONLY when
+    their "Lead Source" is a dedicated tracking number mapped in
+    INBOUND_LEAD_SOURCE_ATTRIBUTION. All other inbound activity is reported
+    as a company-wide total only (not attributed to an individual).
 """
 
 from __future__ import annotations
@@ -21,6 +31,15 @@ import csv
 import io
 from collections import defaultdict
 from pathlib import Path
+
+# Dedicated inbound tracking numbers (REsimpli "Lead Source" value) that are
+# actually a specific team member's personal line. An answered/connected
+# inbound call whose Lead Source matches here is credited to that person,
+# just like an outbound call would be. Add more "Lead Source" -> person
+# mappings here as new dedicated numbers are set up.
+INBOUND_LEAD_SOURCE_ATTRIBUTION = {
+    "Zach Number": "Zach Austin",
+}
 
 
 def parse_calllog_csv(file_obj_or_path) -> list[dict]:
@@ -74,12 +93,15 @@ def _is_text(comm_type: str) -> bool:
 
 
 def summarize_by_person(rows: list[dict]) -> dict:
-    """Rank team members by outbound call + text volume.
+    """Rank team members by call + text activity.
 
-    Only rows with a populated "Caller/Sender" count — those are the
-    agent-initiated (outbound) communications. Inbound calls/texts, missed
-    calls and voicemails have no sender and are reported separately as
-    company-wide inbound totals.
+    Rows with a populated "Caller/Sender" are agent-initiated (outbound)
+    communications and always count for that person. Inbound calls/texts,
+    missed calls and voicemails have no sender; missed calls never count,
+    and other inbound calls only count for a person when their "Lead
+    Source" is one of the dedicated numbers in
+    INBOUND_LEAD_SOURCE_ATTRIBUTION (e.g. "Zach Number" -> "Zach Austin").
+    Everything else inbound is reported separately as company-wide totals.
     """
     per_person = defaultdict(lambda: {
         "calls": 0,
@@ -101,7 +123,17 @@ def summarize_by_person(rows: list[dict]) -> dict:
             if "missed" in comm.lower():
                 missed_calls += 1
             elif _is_call(comm):
-                inbound_calls += 1
+                lead_source = (r.get("Lead Source", "") or "").strip()
+                attributed_to = INBOUND_LEAD_SOURCE_ATTRIBUTION.get(lead_source)
+                if attributed_to:
+                    p = per_person[attributed_to]
+                    p["calls"] += 1
+                    p["total"] += 1
+                    p["talk_seconds"] += duration_to_seconds(
+                        r.get("Call Duration", "")
+                    )
+                else:
+                    inbound_calls += 1
             elif _is_text(comm):
                 inbound_texts += 1
             continue
